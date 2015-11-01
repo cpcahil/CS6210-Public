@@ -385,7 +385,7 @@ int main(int argc, char **argv)
     gtcache_init(1024*2, 500, 2);
     td3[0].key = "http://FullBufferTest.com";
     td3[0].data = largebuf;
-    td3[0].size = 1000;
+    td3[0].size = 999;
     TestSet(&td3[0]);
     TestSet(td2+0);
     cnt += testGet("Test 18a: 1k key set works", &td2[0], true);
