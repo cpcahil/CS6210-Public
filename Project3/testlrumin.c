@@ -565,16 +565,16 @@ int main(int argc, char **argv)
     td3[0].size = 1024-1;
     TestSet(&td3[0]);
 
-    cnt += testGet("Test 24a: 1st key is gone",          &td6[0], false);
-    cnt += testGet("Test 24b: 2nd key is there",         &td6[1], true);
-    cnt += testGet("Test 24c: 3rd key is there",         &td6[2], true);
-    cnt += testGet("Test 24d: 4th key is there",         &td6[3], true);
-    cnt += testGet("Test 24e: 5th key is there",         &td6[4], true);
-    cnt += testGet("Test 24f: 6th key is there",         &td6[5], true);
-    cnt += testGet("Test 24g: 7th key is there",         &td6[6], true);
-    cnt += testGet("Test 24h: 8th key is there",         &td6[7], true);
-    cnt += testGet("Test 24i: 9th key is there",         &td6[8], true);
-    cnt += testGet("Test 24j: new key is there",         &td3[0], true);
+    cnt += testGet("Test 25a: 1st key is gone",          &td6[0], false);
+    cnt += testGet("Test 25b: 2nd key is there",         &td6[1], true);
+    cnt += testGet("Test 25c: 3rd key is there",         &td6[2], true);
+    cnt += testGet("Test 25d: 4th key is there",         &td6[3], true);
+    cnt += testGet("Test 25e: 5th key is there",         &td6[4], true);
+    cnt += testGet("Test 25f: 6th key is there",         &td6[5], true);
+    cnt += testGet("Test 25g: 7th key is there",         &td6[6], true);
+    cnt += testGet("Test 25h: 8th key is there",         &td6[7], true);
+    cnt += testGet("Test 25i: 9th key is there",         &td6[8], true);
+    cnt += testGet("Test 25j: new key is there",         &td3[0], true);
             
     /*
      * Test26 - test eviction of LRU element across multiple parent bands
@@ -598,18 +598,16 @@ int main(int argc, char **argv)
     td3[0].size = 1024*4-1;
     TestSet(&td3[0]);
 
-    cnt += testGet("Test 24a: 1st key is gone",          &td6[0], false);
-    cnt += testGet("Test 24b: 2nd key is there",         &td6[1], true);
-    cnt += testGet("Test 24c: 3rd key is there",         &td6[2], true);
-    cnt += testGet("Test 24d: 4th key is there",         &td6[3], true);
-    cnt += testGet("Test 24e: 5th key is there",         &td6[4], true);
-    cnt += testGet("Test 24f: 6th key is there",         &td6[5], true);
-    cnt += testGet("Test 24g: 7th key is there",         &td6[6], true);
-    cnt += testGet("Test 24h: 8th key is there",         &td6[7], true);
-    cnt += testGet("Test 24i: 9th key is there",         &td6[8], true);
-    cnt += testGet("Test 24j: new key is there",         &td3[0], true);
-            
-    
+    cnt += testGet("Test 26a: 1st key is gone",          &td6[0], false);
+    cnt += testGet("Test 26b: 2nd key is there",         &td6[1], true);
+    cnt += testGet("Test 26c: 3rd key is there",         &td6[2], true);
+    cnt += testGet("Test 26d: 4th key is there",         &td6[3], true);
+    cnt += testGet("Test 26e: 5th key is there",         &td6[4], true);
+    cnt += testGet("Test 26f: 6th key is there",         &td6[5], true);
+    cnt += testGet("Test 26g: 7th key is there",         &td6[6], true);
+    cnt += testGet("Test 26h: 8th key is there",         &td6[7], true);
+    cnt += testGet("Test 26i: 9th key is there",         &td6[8], true);
+    cnt += testGet("Test 26j: new key is there",         &td3[0], true);
 
 
     if( cnt == 0 )
