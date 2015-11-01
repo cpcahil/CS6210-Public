@@ -76,6 +76,19 @@ testdata_t      td5[] =
     { "testA", largebuf, 4095 }
 };
 
+testdata_t      td6[] =
+{
+    { "test1", largebuf, 16383 },
+    { "test2", largebuf,  4095 },
+    { "test3", largebuf,  8191 },
+    { "test4", largebuf, 16383 },
+    { "test5", largebuf,  4095 },
+    { "test6", largebuf,  8191 },
+    { "test7", largebuf,  2047 },
+    { "test8", largebuf,  2047 },
+    { "test9", largebuf,  2047 }
+};
+
 static int testGet( char * test, testdata_t * pt, bool should_be_present);
 static void TestSet(testdata_t * pt);
 
@@ -439,7 +452,7 @@ int main(int argc, char **argv)
     TestSet(&td3[1]);
     cnt += testGet("Test 21a: 1st key is still present", &td4[0], true);
     cnt += testGet("Test 21b: 2nd key is gone",          &td4[1], false);
-    cnt += testGet("Test 21c: 3dd key is still present", &td4[2], true);
+    cnt += testGet("Test 21c: 3rd key is still present", &td4[2], true);
     cnt += testGet("Test 21d: 4th key is still present", &td4[3], true);
     cnt += testGet("Test 21e: 5th key is still present", &td4[4], true);
     cnt += testGet("Test 21f: 6th key is still present", &td4[5], true);
@@ -457,7 +470,7 @@ int main(int argc, char **argv)
     TestSet(&td3[2]);
     cnt += testGet("Test 22a: 1st key is still present", &td4[0], true);
     cnt += testGet("Test 22b: 2nd key is gone",          &td4[1], false);
-    cnt += testGet("Test 22c: 3dd key is still present", &td4[2], true);
+    cnt += testGet("Test 22c: 3rd key is still present", &td4[2], true);
     cnt += testGet("Test 22d: 4th key is still present", &td4[3], true);
     cnt += testGet("Test 22e: 5th key is still present", &td4[4], true);
     cnt += testGet("Test 22f: 6th key is gone",          &td4[5], false);
@@ -477,8 +490,8 @@ int main(int argc, char **argv)
     TestSet(&td3[3]);
     cnt += testGet("Test 23a: 1st key is still present", &td4[0], true);
     cnt += testGet("Test 23b: 2nd key is gone",          &td4[1], false);
-    cnt += testGet("Test 23c: 3dd key is still present", &td4[2], true);
-    cnt += testGet("Test 23d: 4th key is gone",          &td4[3], false);
+    cnt += testGet("Test 23c: 3rd key is gone",          &td4[2], false);
+    cnt += testGet("Test 23d: 4th key is still present", &td4[3], true);
     cnt += testGet("Test 23e: 5th key is still present", &td4[4], true);
     cnt += testGet("Test 23f: 6th key is gone",          &td4[5], false);
     cnt += testGet("Test 23g: 7th key is still present", &td4[6], true);
@@ -528,8 +541,74 @@ int main(int argc, char **argv)
     cnt += testGet("Test 24j: 5th 4k key is there",         &td5[9], true);
     cnt += testGet("Test 24k: new key is there",            &td3[0], true);
             
-
+    /*
+     * Test25 - test eviction of LRU element across multiple parent bands
+     *          add a bunch of items of 2, 4, 8, and 16K sizes to fill buffer
+     *          with the 16K buffer being first (oldest).  Try to add a 1K 
+     *          buffer afterwards to see if the oldest one gets deleted
+     */
+    gtcache_destroy();
     
+    for(i=0, size=0; i < sizeof(td6)/sizeof(*td6); i++)
+    {
+        size += td6[i].size;
+    }
+    gtcache_init(size, 512, 5);
+
+    for(i=0; i < sizeof(td6)/sizeof(*td6); i++)
+    {
+        TestSet(&td6[i]);
+    }
+
+    td3[0].key = "http://1Kbuffer.com";
+    td3[0].data = largebuf;
+    td3[0].size = 1024-1;
+    TestSet(&td3[0]);
+
+    cnt += testGet("Test 24a: 1st key is gone",          &td6[0], false);
+    cnt += testGet("Test 24b: 2nd key is there",         &td6[1], true);
+    cnt += testGet("Test 24c: 3rd key is there",         &td6[2], true);
+    cnt += testGet("Test 24d: 4th key is there",         &td6[3], true);
+    cnt += testGet("Test 24e: 5th key is there",         &td6[4], true);
+    cnt += testGet("Test 24f: 6th key is there",         &td6[5], true);
+    cnt += testGet("Test 24g: 7th key is there",         &td6[6], true);
+    cnt += testGet("Test 24h: 8th key is there",         &td6[7], true);
+    cnt += testGet("Test 24i: 9th key is there",         &td6[8], true);
+    cnt += testGet("Test 24j: new key is there",         &td3[0], true);
+            
+    /*
+     * Test26 - test eviction of LRU element across multiple parent bands
+     *          same as test25 but with a 4K buffer
+     */
+    gtcache_destroy();
+    
+    for(i=0, size=0; i < sizeof(td6)/sizeof(*td6); i++)
+    {
+        size += td6[i].size;
+    }
+    gtcache_init(size, 512, 5);
+
+    for(i=0; i < sizeof(td6)/sizeof(*td6); i++)
+    {
+        TestSet(&td6[i]);
+    }
+
+    td3[0].key = "http://4Kbuffer.com";
+    td3[0].data = largebuf;
+    td3[0].size = 1024*4-1;
+    TestSet(&td3[0]);
+
+    cnt += testGet("Test 24a: 1st key is gone",          &td6[0], false);
+    cnt += testGet("Test 24b: 2nd key is there",         &td6[1], true);
+    cnt += testGet("Test 24c: 3rd key is there",         &td6[2], true);
+    cnt += testGet("Test 24d: 4th key is there",         &td6[3], true);
+    cnt += testGet("Test 24e: 5th key is there",         &td6[4], true);
+    cnt += testGet("Test 24f: 6th key is there",         &td6[5], true);
+    cnt += testGet("Test 24g: 7th key is there",         &td6[6], true);
+    cnt += testGet("Test 24h: 8th key is there",         &td6[7], true);
+    cnt += testGet("Test 24i: 9th key is there",         &td6[8], true);
+    cnt += testGet("Test 24j: new key is there",         &td3[0], true);
+            
     
 
 
