@@ -43,10 +43,10 @@ char smallbuf[SMALLBUF_CNT][SMALLBUF_LEN];
 
 testdata_t        td2[] = 
 {
-    { "test2-1", smallbuf[0], sizeof(smallbuf[0]) },
-    { "test2-2", smallbuf[1], sizeof(smallbuf[1]) },
-    { "test2-3", smallbuf[2], sizeof(smallbuf[2]) },
-    { "test2-4", smallbuf[3], sizeof(smallbuf[3]) }
+    { "test2-1", smallbuf[0], sizeof(smallbuf[0])-1 },
+    { "test2-2", smallbuf[1], sizeof(smallbuf[1])-1 },
+    { "test2-3", smallbuf[2], sizeof(smallbuf[2])-1 },
+    { "test2-4", smallbuf[3], sizeof(smallbuf[3])-1 }
 };
 
 testdata_t        td3[10];      // will be set inline later
