@@ -50,6 +50,7 @@ struct testdata td2[] =
     { "test2-4", smallbuf[3], sizeof(smallbuf[3]) }
 };
 
+static int testAssert(char * test, bool condition);
 static int testGet( char * test, testdata_t * pt, bool should_be_present);
 static void TestSet(testdata_t * pt);
 
@@ -332,8 +333,40 @@ int main(int argc, char **argv)
     cnt += testGet("Test 17f: access 3rd item 1st time", &td2[3], true);
     cnt += testGet("Test 17g: 1st item is gone", &td2[1], false);
     cnt += testGet("Test 17e: 2nd item still here", &td2[2], true);
+
+    /*
+     * Test18: Makes sure that setting an already existing entry reuses the 
+     * cache memory instead of adding a completely new entry.
+     */
+
+    gtcache_destroy();
+    gtcache_init(1024*2, 1024, 0);
+
+    TestSet(&td[0]);
+    cnt += testGet("Test 18a: stored 1st item", &td[0], true);
+
+    char * temp_key = td[1].key;
+    int temp_size = td[1].size;
     
+    td[1].key = td[0].key;
+    TestSet(&td[1]);
+
+    cnt += testAssert("Test 18b: item added again - same size", gtcache_memused() == td[1].size);
     
+    td[1].size = td[1].size * 2;
+    TestSet(&td[1]);
+
+    cnt += testAssert("Test 18c: item added again - larger size", gtcache_memused() == td[1].size);
+    
+    td[1].size = td[1].size / 2;
+    TestSet(&td[1]);
+
+    cnt += testAssert("Test 18d: item added again - smaller size", gtcache_memused() == td[1].size);
+    
+    // Restore td[1] to the original values
+    td[1].key = temp_key;
+    td[1].size = temp_size;
+
     if( cnt == 0 )
     {
         fprintf(stderr, "All tests passed\n");
@@ -343,6 +376,20 @@ int main(int argc, char **argv)
         fprintf(stderr, "FAILED:  %d tests failed\n", cnt);
     }
     return(cnt);
+}
+
+static int testAssert(char * test, bool condition) {
+    int rtn = 1;
+
+    if (condition) {
+        fprintf(stderr, "%s: passed\n", test);
+        rtn = 0;
+    }
+    else {
+        fprintf(stderr, "%s: FAILED\n", test);
+    }
+
+    return rtn;
 }
 
 static void
