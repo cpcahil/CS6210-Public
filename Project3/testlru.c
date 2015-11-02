@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdbool.h>
+#include <unistd.h>
 #include "gtcache.h"
 #include "verbosity.h"
 
@@ -50,6 +51,7 @@ struct testdata td2[] =
 };
 
 static int testGet( char * test, testdata_t * pt, bool should_be_present);
+static void TestSet(testdata_t * pt);
 
 bool exitOnError = false;
 
@@ -109,21 +111,21 @@ int main(int argc, char **argv)
     /*
      * Test1: save/get of single item works
      */
-    gtcache_set(td[0].key, td[0].data, td[0].size);
+    TestSet(&td[0]);
     cnt += testGet("Test  1a: save/get of single item", &td[0], true);
     cnt += testGet("Test  1b: other item not found", &td[1], false);
     
     /*
      * Test2: add a 2nd item and see it is still there
      */
-    gtcache_set(td[1].key, td[1].data, td[1].size);
+    TestSet(&td[1]);
     cnt += testGet("Test  2a: save/get of another item", &td[1], true);
     cnt += testGet("Test  2b: can still get the 1st item", &td[0], true);
  
     /*
      * Test3: add a 3rd item and see if they are all still there
      */
-    gtcache_set(td[2].key, td[2].data, td[2].size);
+    TestSet(&td[2]);
     cnt += testGet("Test  3a: save/get of another item", &td[2], true);
     cnt += testGet("Test  3b: can still get the 2nd item", &td[1], true);
     cnt += testGet("Test  3c: can still get the 1st item", &td[0], true);
@@ -131,7 +133,7 @@ int main(int argc, char **argv)
     /*
      * Test4: add a 4th item and now 4th, 2nd and 1st should be there
      */
-    gtcache_set(td[3].key, td[3].data, td[3].size);
+    TestSet(&td[3]);
     cnt += testGet("Test  4a: save/get of another item", &td[3], true);
     cnt += testGet("Test  4b: 3rd item is no longer in cache", &td[2], false);
     cnt += testGet("Test  4c: can still get the 2nd item", &td[1], true);
@@ -155,21 +157,21 @@ int main(int argc, char **argv)
     /*
      * test 6 - repeating test1 on new cache
      */
-    gtcache_set(td[0].key, td[0].data, td[0].size);
+    TestSet(&td[0]);
     cnt += testGet("Test  6a: save/get of single item", &td[0], true);
     cnt += testGet("Test  6b: other item not found", &td[1], false);
     
     /*
      * Test7: add a 2nd item and see it is still there
      */
-    gtcache_set(td[1].key, td[1].data, td[1].size);
+    TestSet(&td[1]);
     cnt += testGet("Test  7a: save/get of another item", &td[1], true);
     cnt += testGet("Test  7b: can still get the 1st item", &td[0], true);
 
     /*
      * Test8: add a 3rd item and see if they are all still there
      */
-    gtcache_set(td[2].key, td[2].data, td[2].size);
+    TestSet(&td[2]);
     cnt += testGet("Test  8a: save/get of another item", &td[2], true);
     cnt += testGet("Test  8b: can still get the 2nd item", &td[1], true);
     cnt += testGet("Test  8c: can still get the 1st item", &td[0], true);
@@ -177,7 +179,7 @@ int main(int argc, char **argv)
     /*
      * Test9: add a 4th item and all 4 should be there
      */
-    gtcache_set(td[3].key, td[3].data, td[3].size);
+    TestSet(&td[3]);
     cnt += testGet("Test  9a: save/get of another item", &td[3], true);
     cnt += testGet("Test  9b: can still get the 3rd item", &td[2], true);
     cnt += testGet("Test  9c: can still get the 2nd item", &td[1], true);
@@ -186,7 +188,7 @@ int main(int argc, char **argv)
     /*
      * Test10: add a 5th item and first 3 + 5th should be there
      */
-    gtcache_set(td[4].key, td[4].data, td[4].size);
+    TestSet(&td[4]);
     cnt += testGet("Test 10a: save/get of another item",   &td[4], true);
     cnt += testGet("Test 10b: 4th item has been dropped",  &td[3], false);
     cnt += testGet("Test 10c: can still get the 3rd item", &td[2], true);
@@ -196,7 +198,7 @@ int main(int argc, char **argv)
     /*
      * Test11: add a 6th item and first 3 + 6th should be there
      */
-    gtcache_set(td[5].key, td[5].data, td[5].size);
+    TestSet(&td[5]);
     cnt += testGet("Test 11a: save/get of another item",   &td[5], true);
     cnt += testGet("Test 11b: 5th item has been dropped",  &td[4], false);
     cnt += testGet("Test 11c: 4th item is still dropped",  &td[3], false);
@@ -207,7 +209,7 @@ int main(int argc, char **argv)
     /*
      * Test12: add a 7th item and first 3 + 6th should be there
      */
-    gtcache_set(td[6].key, td[6].data, td[6].size);
+    TestSet(&td[6]);
     cnt += testGet("Test 12a: save/get of another item",   &td[6], true);
     cnt += testGet("Test 12b: 6th item has been dropped",  &td[5], false);
     cnt += testGet("Test 12c: 5th item is still dropped",  &td[4], false);
@@ -219,7 +221,7 @@ int main(int argc, char **argv)
     /*
      * Test13: add the 7th item again and make sure things are good
      */
-    gtcache_set(td[6].key, td[6].data, td[6].size);
+    TestSet(&td[6]);
     cnt += testGet("Test 13a: save/get of same item again",   &td[6], true);
     cnt += testGet("Test 13b: 6th item is still dropped",  &td[5], false);
     cnt += testGet("Test 13c: 5th item is still dropped",  &td[4], false);
@@ -231,9 +233,12 @@ int main(int argc, char **argv)
     /*
      * Test14: Adding very large item fails
      */
-    gtcache_set(td[7].key, largebuf, sizeof(largebuf));
-    cnt += testGet("Test 14a: can't save beyond capacity",   &td[7], false);
-    cnt += testGet("Test 14b: can still get the 7th item",   &td[6], true);
+    td3.key = "http://FullBufferTest.com";
+    td3.data = largebuf;
+    td3.size = sizeof(largebuf);
+    TestSet(&td3);
+    cnt += testGet("Test 14a: can't save beyond capacity", &td3,   false);
+    cnt += testGet("Test 14b: can still get the 7th item", &td[6], true);
     cnt += testGet("Test 14b: 6th item is still dropped",  &td[5], false);
     cnt += testGet("Test 14d: 5th item is still dropped",  &td[4], false);
     cnt += testGet("Test 14e: 4th item is still dropped",  &td[3], false);
@@ -254,30 +259,30 @@ int main(int argc, char **argv)
     /*
      * Test15: can add 3 1K buffer but fails at 4th.
      */
-    gtcache_set(td[1].key, td[1].data, td[1].size);
+    TestSet(&td[1]);
     cnt += testGet("Test 15a: stored 1st item", &td[1], true);
-    gtcache_set(td[2].key, td[2].data, td[2].size);
+    TestSet(&td[2]);
     cnt += testGet("Test 15b: stored 2nd item", &td[2], true);
-    gtcache_set(td[3].key, td[3].data, td[3].size);
+    TestSet(&td[3]);
     cnt += testGet("Test 15c: stored 3rd item", &td[3], true);
-    gtcache_set(td[4].key, td[4].data, td[4].size);
+    TestSet(&td[4]);
     cnt += testGet("Test 15d: stored 4th item", &td[4], true);
     cnt += testGet("Test 15e: checking 4th item again", &td[4], true);
-    gtcache_set(td2[0].key, td2[0].data, td2[0].size);
+    TestSet(&td2[0]);
     cnt += testGet("Test 15f: 1st 1K buffer works",    &td2[0], true);
     cnt += testGet("Test 15g: Checking 1st 1K again",  &td2[0], true);
     cnt += testGet("Test 15h: Checking 1st 1K again",  &td2[0], true);
-    gtcache_set(td2[1].key, td2[1].data, td2[1].size);
+    TestSet(&td2[1]);
     cnt += testGet("Test 15i: 2nd 1K buffer works",    &td2[1], true);
     cnt += testGet("Test 15j: Checking 2nd 1K again",  &td2[1], true);
     cnt += testGet("Test 15k: Checking 2nd 1K again",  &td2[1], true);
     cnt += testGet("Test 15l: Checking 2nd 1K again",  &td2[1], true);
-    gtcache_set(td2[2].key, td2[2].data, td2[2].size);
+    TestSet(&td2[2]);
     cnt += testGet("Test 15m: 3rd 1K buffer works",    &td2[2], true);
     cnt += testGet("Test 15n: Checking 3rd 1K again",  &td2[2], true);
     cnt += testGet("Test 15o: Checking 3rd 1K again",  &td2[2], true);
     cnt += testGet("Test 15p: Checking 3rd 1K again",  &td2[2], true);
-    gtcache_set(td2[3].key, td2[3].data, td2[3].size);
+    TestSet(&td2[3]);
     cnt += testGet("Test 15q: 4th 1K buffer works",    &td2[3], true);
     cnt += testGet("Test 15r: 3rd 1K buffer works",    &td2[2], true);
     cnt += testGet("Test 15s: 2nd 1K buffer works",    &td2[1], true);
@@ -286,27 +291,26 @@ int main(int argc, char **argv)
     /*
      * Test16: add an item that takes exactly the full capacity
      */
-    td3.key = "http://FullBufferTest.com";
-    td3.data = largebuf;
-    td3.size = 1024*4;
-    gtcache_set(td3.key, td3.data, td3.size);
+    td3.size = 1024*4-1;
+    TestSet(&td3);
     cnt += testGet("Test 16a: 4K buffer fits",   &td3, true);
     cnt += testGet("Test 16b: 1st 1K buffer gone",  &td2[0], false);
     cnt += testGet("Test 16c: 2nd 1K buffer gone",  &td2[1], false);
     cnt += testGet("Test 16d: 3rd 1K buffer gone",  &td2[2], false);
     cnt += testGet("Test 16e: 4th item gone",       &td[4],  false);
-    gtcache_set(td[1].key, td[1].data, td[1].size);
+    TestSet(&td[1]);
     cnt += testGet("Test 16f: stored 1st item", &td[1], true);
     cnt += testGet("Test 16g: 4K buffer gone",  &td3, false);
-    gtcache_set(td[2].key, td[2].data, td[2].size);
+    TestSet(&td[2]);
     cnt += testGet("Test 16h: stored 2nd item", &td[2], true);
-    gtcache_set(td[3].key, td[3].data, td[3].size);
+    TestSet(&td[3]);
     cnt += testGet("Test 16d: stored 3rd item", &td[3], true);
-    gtcache_set(td3.key, td3.data, td3.size);
+    TestSet(&td3);
     cnt += testGet("Test 16i: 4K buffer fits again",   &td3, true);
     cnt += testGet("Test 16j: 1st item gone", &td[1], false);
     cnt += testGet("Test 16k: 2nd item gone", &td[2], false);
     cnt += testGet("Test 16l: 3rd item gone", &td[3], false);
+
 
     /*
      * Test17: explicit test for lru - reset cache to 2K total,
@@ -316,15 +320,15 @@ int main(int argc, char **argv)
      */
     gtcache_destroy();
     gtcache_init(1025*2, 1024, 0);
-    gtcache_set(td3.key, td3.data, td3.size);       
+    TestSet(&td3);
     cnt += testGet("Test 17a: 4k key wont fit in 2k cache", &td3, false);
-    gtcache_set(td2[1].key, td2[1].data, td2[1].size);
-    gtcache_set(td2[2].key, td2[2].data, td2[2].size);
+    TestSet(&td2[1]);
+    TestSet(&td2[2]);
     cnt += testGet("Test 17b: access 1st item 1st time", &td2[1], true);
     cnt += testGet("Test 17c: access 1st item 2nd time", &td2[1], true);
     cnt += testGet("Test 17d: access 1st item 3rd time", &td2[1], true);
     cnt += testGet("Test 17e: access 2nd item 1st time", &td2[2], true);
-    gtcache_set(td2[3].key, td2[3].data, td2[1].size);
+    TestSet(&td2[3]);
     cnt += testGet("Test 17f: access 3rd item 1st time", &td2[3], true);
     cnt += testGet("Test 17g: 1st item is gone", &td2[1], false);
     cnt += testGet("Test 17e: 2nd item still here", &td2[2], true);
@@ -341,6 +345,13 @@ int main(int argc, char **argv)
     return(cnt);
 }
 
+static void
+TestSet(testdata_t * pt)
+{
+    gtcache_set(pt->key, pt->data, pt->size);
+    usleep(1);
+}
+
 static int 
 testGet( char * test, testdata_t * pt, bool should_be_present)
 {
@@ -351,6 +362,7 @@ testGet( char * test, testdata_t * pt, bool should_be_present)
 
 
     p = gtcache_get(pt->key, &size);
+    usleep(1);
 
     if( ! should_be_present )
     {
@@ -367,6 +379,7 @@ testGet( char * test, testdata_t * pt, bool should_be_present)
     else
     {
         p2 = gtcache_get(pt->key, NULL);
+        usleep(1);
 
         if( p == NULL )
         {

@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdbool.h>
+#include <unistd.h>
 #include "gtcache.h"
 #include "verbosity.h"
 
@@ -310,7 +311,6 @@ int main(int argc, char **argv)
     cnt += testGet("Test 15d: stored 4th item", &td[4], true);
     cnt += testGet("Test 15e: checking 4th item again", &td[4], true);
     TestSet(td2+0);
-    gtcache_set(td2[0].key, td2[0].data, td2[0].size);
     cnt += testGet("Test 15f: 1st 1K buffer works",    &td2[0], true);
     cnt += testGet("Test 15g: Checking 1st 1K again",  &td2[0], true);
     cnt += testGet("Test 15h: Checking 1st 1K again",  &td2[0], true);
@@ -526,7 +526,7 @@ int main(int argc, char **argv)
 
     td3[0].key = "http://5Kbuffer.com";
     td3[0].data = largebuf;
-    td3[0].size = 1024*5-1;
+    td3[0].size = 1024*5-2;
     TestSet(&td3[0]);
 
     cnt += testGet("Test 24a: 1st 2k key is gone",          &td5[0], false);
@@ -625,6 +625,7 @@ static void
 TestSet(testdata_t * pt)
 {
     gtcache_set(pt->key, pt->data, pt->size);
+    usleep(1);
 }
 
 static int 
@@ -637,6 +638,7 @@ testGet( char * test, testdata_t * pt, bool should_be_present)
 
 
     p = gtcache_get(pt->key, &size);
+    usleep(1);
 
     if( ! should_be_present )
     {
@@ -653,6 +655,7 @@ testGet( char * test, testdata_t * pt, bool should_be_present)
     else
     {
         p2 = gtcache_get(pt->key, NULL);
+        usleep(1);
 
         if( p == NULL )
         {
