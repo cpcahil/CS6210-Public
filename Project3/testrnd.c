@@ -231,26 +231,17 @@ int main(int argc, char **argv)
     gtcache_init(1024*4, 1024, 0);
 
     /*
-     * Test15: can add 3 1K buffer but fails at 4th.
+     * Test15: add 4 1k+1 entries results in 3 in the list
      */
-    gtcache_set(td[1].key, td[1].data, td[1].size);
-    cnt += testGet("Test 15a: stored 1st item", &td[1], true);
-    gtcache_set(td[2].key, td[2].data, td[2].size);
-    cnt += testGet("Test 15b: stored 2nd item", &td[2], true);
-    gtcache_set(td[3].key, td[3].data, td[3].size);
-    cnt += testGet("Test 15c: stored 3rd item", &td[3], true);
-    gtcache_set(td[4].key, td[4].data, td[4].size);
-    cnt += testGet("Test 15d: stored 4th item", &td[4], true);
-    cnt += testGet("Test 15e: checking 4th item again", &td[4], true);
     gtcache_set(td2[0].key, td2[0].data, td2[0].size);
-    cnt += testGet("Test 15f: 1st 1K buffer works",    &td2[0], true);
+    cnt += testGet("Test 15a: 1st 1K buffer works",    &td2[0], true);
     gtcache_set(td2[1].key, td2[1].data, td2[1].size);
-    cnt += testGet("Test 15g: 2nd 1K buffer works",    &td2[1], true);
+    cnt += testGet("Test 15b: 2nd 1K buffer works",    &td2[1], true);
     gtcache_set(td2[2].key, td2[2].data, td2[2].size);
-    cnt += testGet("Test 15h: 3rd 1K buffer works",    &td2[2], true);
+    cnt += testGet("Test 15c: 3rd 1K buffer works",    &td2[2], true);
     gtcache_set(td2[3].key, td2[3].data, td2[3].size);
-    cnt += testGet("Test 15i: 4th 1K buffer works",    &td2[3], true);
-    cnt += testGetMultiple("Test 15j: 2 of the others are still here", &td2[0], 2, 3);
+    cnt += testGet("Test 15d: 4th 1K buffer works",    &td2[3], true);
+    cnt += testGetMultiple("Test 15e: 2 of the others are still here", &td2[0], 2, 3);
    
     /*
      * Test16: add an item that takes exactly the full capacity
