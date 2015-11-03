@@ -367,6 +367,22 @@ int main(int argc, char **argv)
     td[1].key = temp_key;
     td[1].size = temp_size;
 
+    /*
+     * Test19: Invalid arguments
+     */
+
+    gtcache_destroy();
+    gtcache_init(1024*2, 1024, 0);
+
+    gtcache_set(NULL, "data", 10);
+    cnt += testAssert("Test 19a: item is not stored if key is null", gtcache_memused() == 0);
+    gtcache_set("key", NULL, 10);
+    cnt += testAssert("Test 19b: item is not stored if data is null", gtcache_memused() == 0);
+    gtcache_set("key", "data", 0);
+    cnt += testAssert("Test 19c: item is not stored if size = 0", gtcache_memused() == 0);
+    gtcache_set("key", "data", -1);
+    cnt += testAssert("Test 19d: item is not stored if size < 0", gtcache_memused() == 0);
+
     if( cnt == 0 )
     {
         fprintf(stderr, "All tests passed\n");
