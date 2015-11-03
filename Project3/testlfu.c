@@ -49,6 +49,7 @@ struct testdata td2[] =
     { "test2-4", smallbuf[3], sizeof(smallbuf[3]) }
 };
 
+static int testAssert(char * test, bool condition);
 static int testGet( char * test, testdata_t * pt, bool should_be_present);
 
 bool exitOnError = false;
@@ -308,6 +309,52 @@ int main(int argc, char **argv)
     cnt += testGet("Test 16k: 2nd item gone", &td[2], false);
     cnt += testGet("Test 16l: 3rd item gone", &td[3], false);
 
+    /*
+     * Test17: Makes sure that setting an already existing entry reuses the 
+     * cache memory instead of adding a completely new entry.
+     */
+
+    gtcache_destroy();
+    gtcache_init(1024*2, 1024, 0);
+
+    gtcache_set(td[0].key, td[0].data, td[0].size);
+    cnt += testGet("Test 17a: stored 1st item", &td[0], true);
+
+    char * temp_key = td[1].key;
+    int temp_size = td[1].size;
+    
+    td[1].key = td[0].key;
+    gtcache_set(td[1].key, td[1].data, td[1].size);
+    cnt += testAssert("Test 17b: item added again - same size", gtcache_memused() == td[1].size);
+    
+    td[1].size = td[1].size * 2;
+    gtcache_set(td[1].key, td[1].data, td[1].size);
+    cnt += testAssert("Test 17c: item added again - larger size", gtcache_memused() == td[1].size);
+    
+    td[1].size = td[1].size / 2;
+    gtcache_set(td[1].key, td[1].data, td[1].size);
+    cnt += testAssert("Test 17d: item added again - smaller size", gtcache_memused() == td[1].size);
+    
+    // Restore td[1] to the original values
+    td[1].key = temp_key;
+    td[1].size = temp_size;
+
+    /*
+     * Test18: Invalid arguments
+     */
+
+    gtcache_destroy();
+    gtcache_init(1024*2, 1024, 0);
+
+    gtcache_set(NULL, "data", 10);
+    cnt += testAssert("Test 18a: item is not stored if key is null", gtcache_memused() == 0);
+    gtcache_set("key", NULL, 10);
+    cnt += testAssert("Test 18b: item is not stored if data is null", gtcache_memused() == 0);
+    gtcache_set("key", "data", 0);
+    cnt += testAssert("Test 18c: item is not stored if size = 0", gtcache_memused() == 0);
+    gtcache_set("key", "data", -1);
+    cnt += testAssert("Test 18d: item is not stored if size < 0", gtcache_memused() == 0);
+
     
     if( cnt == 0 )
     {
@@ -319,6 +366,21 @@ int main(int argc, char **argv)
     }
     return(cnt);
 }
+
+static int testAssert(char * test, bool condition) {
+    int rtn = 1;
+
+    if (condition) {
+        fprintf(stderr, "%s: passed\n", test);
+        rtn = 0;
+    }
+    else {
+        fprintf(stderr, "%s: FAILED\n", test);
+    }
+
+    return rtn;
+}
+
 
 static int 
 testGet( char * test, testdata_t * pt, bool should_be_present)
