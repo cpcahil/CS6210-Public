@@ -428,6 +428,12 @@ int main(int argc, char **argv)
      *          add additional 8K entry, should cause 1st 16k entry to be dropped
      *          NOTE: this is not how I expected it to work.  But it is how the 
      *          udacity testing is verifying it
+     * 
+     *          before:  2047(0), 16383(3), 8191(2), 4095(1),
+     *                   2047(0), 16383(3), 8191(2), 4095(1)
+     *          after:   2047(0), gone,     8191(2), 4095(1),
+     *                   2047(0), 16383(3), 8191(2), 4095(1),
+     *                   8191(2)
      */ 
     gtcache_destroy();
     for(i=0, size=0; i < sizeof(td4)/sizeof(*td4); i++)
@@ -458,6 +464,12 @@ int main(int argc, char **argv)
     
     /*
      * test21 - now replace another 8K element, should just add the element
+     *          before:  2047(0), gone,     8191(2), 4095(1),
+     *                   2047(0), 16383(3), 8191(2), 4095(1),
+     *                   8191(2)
+     *          after:   2047(0), gone,     8191(2), 4095(1),
+     *                   2047(0), 16383(3), 8191(2), 4095(1),
+     *                   8191(2), 8191(2)
      */ 
     td3[1].key = "http://8KBuffer.com";
     td3[1].data = largebuf;
@@ -476,6 +488,12 @@ int main(int argc, char **argv)
     
     /*
      * test22 - now replace a 16k element, should replace the 2nd 16K entry
+     *          before:  2047(0), gone,     8191(2), 4095(1),
+     *                   2047(0), 16383(3), 8191(2), 4095(1),
+     *                   8191(2), 8191(2)
+     *          after:   2047(0), gone,     8191(2), 4095(1),
+     *                   2047(0), gone,     8191(2), 4095(1),
+     *                   8191(2), 8191(2)
      */ 
     td3[2].key = "http://16Kbuffer.com";
     td3[2].data = largebuf;
@@ -495,7 +513,13 @@ int main(int argc, char **argv)
 
     
     /*
-     * test23 - now replace a 2k element, should replace the 4th item (a 4K item)
+     * test23 - now replace a 2k element, should replace the 3rd item (a 8K item)
+     *          before:  2047(0), gone,     8191(2), 4095(1),
+     *                   2047(0), gone,     8191(2), 4095(1),
+     *                   8191(2), 8191(2)
+     *          after:   2047(0), gone,     gone,    4095(1),
+     *                   2047(0), gone,     8191(2), 4095(1),
+     *                   8191(2), 8191(2),  2047(0)
      */ 
     td3[3].key = "http://2Kbuffer.com";
     td3[3].data = largebuf;
@@ -520,6 +544,12 @@ int main(int argc, char **argv)
      *          3rd levels.  try to add an element that fits into the 
      *          4th level but is of a size that two objects from the 3rd
      *          level need to be deleted
+     *
+     *          before:  2047(1), 2047(1), 2047(1), 2047(1), 2047(1),
+     *                   4095(2), 4095(2), 4095(2), 4095(2), 4095(2)
+     *          after:   2047(1), 2047(1), 2047(1), 2047(1), 2047(1),
+     *                   gone,    gone,    4095(2), 4095(2), 4095(2), 
+     *                   5128(3)
      */
     gtcache_destroy();
     
@@ -556,6 +586,11 @@ int main(int argc, char **argv)
      *          add a bunch of items of 2, 4, 8, and 16K sizes to fill buffer
      *          with the 16K buffer being first (oldest).  Try to add a 1K 
      *          buffer afterwards to see if the oldest one gets deleted
+     *  
+     *          before: 16383(4),  4095(2),  8191(3), 16383(4), 4095(2),
+     *                   8191(3),  2047(1),  2047(1),  2047(1)
+     *          after:   gone,     4095(2),  8191(3), 16383(4),  4095(2),
+     *                   8191(3),  2047(1),  2047(1),  2047(1),  1023(0)
      */
     gtcache_destroy();
     
@@ -589,6 +624,11 @@ int main(int argc, char **argv)
     /*
      * Test26 - test eviction of LRU element across multiple parent bands
      *          same as test25 but with a 4K buffer
+     *
+     *          before: 16383(4),  4095(2),  8191(3), 16383(4), 4095(2),
+     *                   8191(3),  2047(1),  2047(1),  2047(1)
+     *          after:   gone,     4095(2),  8191(3), 16383(4), 4095(2),
+     *                   8191(3),  2047(1),  2047(1),  2047(1), 4095(2)
      */
     gtcache_destroy();
     
@@ -623,6 +663,11 @@ int main(int argc, char **argv)
      * Test27 - test LRU ejection in downward order.  With 9 items in the
      *          buffer of 2, 4 and 8K size.  Deleting an 11K item should 
      *          result in the oldest 2 8K entries being removed
+     *
+     *          before:  2047(1),  4095(2),  8191(3),  2047(1), 4095(2),
+     *                   8191(3),  2047(1),  4095(2),  8191(3)
+     *          after    2047(1),  4095(2),  gone,     2047(1), 4095(2),
+     *                   gone,     2047(1),  4095(2),  8191(3), 9216(3)
      */
     gtcache_destroy();
     
@@ -659,6 +704,11 @@ int main(int argc, char **argv)
      *          the 2nd band rather than the 1sth band
      *          Same setup as test 27, but this time we add a 1K object
      *          which ends up replacing a 2047 byte object.
+     *
+     *          before:  2047(1),  4095(2),  8191(3),  2047(1), 4095(2),
+     *                   8191(3),  2047(1),  4095(2),  8191(3)
+     *          before:  gone,     4095(2),  8191(3),  2047(1), 4095(2),
+     *                   8191(3),  2047(1),  4095(2),  8191(3), 1024(1)
      */
     gtcache_destroy();
     
@@ -678,7 +728,7 @@ int main(int argc, char **argv)
     td3[0].size = 1024;
     TestSet(&td3[0]);
 
-    cnt += testGet("Test 28a: 1st key is gond",          &td7[0], false);
+    cnt += testGet("Test 28a: 1st key is gone",          &td7[0], false);
     cnt += testGet("Test 28b: 2nd key is there",         &td7[1], true);
     cnt += testGet("Test 28c: 3rd key is there",         &td7[2], true);
     cnt += testGet("Test 28d: 4th key is there",         &td7[3], true);
@@ -695,6 +745,11 @@ int main(int argc, char **argv)
      *          Same setup as test 27, but this time we add a 1025 byte object
      *          which ends up replacing a 4095 byte object because when it 
      *          rounds up it rounds into the next band.
+     *
+     *          before:  2047(1),  4095(2),  8191(3),  2047(1), 4095(2),
+     *                   8191(3),  2047(1),  4095(2),  8191(3)
+     *          after:   2047(1),  gone,     8191(3),  2047(1), 4095(2),
+     *                   8191(3),  2047(1),  4095(2),  8191(3), 1025(1)
      */
     gtcache_destroy();
     
