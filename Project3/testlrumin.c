@@ -90,6 +90,19 @@ testdata_t      td6[] =
     { "test9", largebuf,  2047 }
 };
 
+testdata_t      td7[] =
+{
+    { "test1", largebuf,  2047 },
+    { "test2", largebuf,  4095 },
+    { "test3", largebuf,  8191 },
+    { "test4", largebuf,  2047 },
+    { "test5", largebuf,  4095 },
+    { "test6", largebuf,  8191 },
+    { "test7", largebuf,  2047 },
+    { "test8", largebuf,  4095 },
+    { "test9", largebuf,  8191 }
+};
+
 static int testGet( char * test, testdata_t * pt, bool should_be_present);
 static void TestSet(testdata_t * pt);
 
@@ -505,11 +518,8 @@ int main(int argc, char **argv)
      * Test24 - test recursive replacement 
      *          create an array of elements which fit into the 2nd and
      *          3rd levels.  try to add an element that fits into the 
-     *          4th level but is of a size that an object from the 3rd
-     *          and then 2nd level needs to be dropped
-     *          so, 2K and 4K elements added, then add 5K element which 
-     *          will require one 4K and one 2K element to be dropped.
-     *          verify correct entries exist afterwards.
+     *          4th level but is of a size that two objects from the 3rd
+     *          level need to be deleted
      */
     gtcache_destroy();
     
@@ -529,13 +539,13 @@ int main(int argc, char **argv)
     td3[0].size = 1024*5-2;
     TestSet(&td3[0]);
 
-    cnt += testGet("Test 24a: 1st 2k key is gone",          &td5[0], false);
+    cnt += testGet("Test 24a: 1st 2k key is there",         &td5[0], true);
     cnt += testGet("Test 24b: 2nd 2k key is there",         &td5[1], true);
     cnt += testGet("Test 24c: 3rd 2k key is there",         &td5[2], true);
     cnt += testGet("Test 24d: 4th 2k key is there",         &td5[3], true);
     cnt += testGet("Test 24e: 5th 2k key is there",         &td5[4], true);
     cnt += testGet("Test 24f: 1st 4k key is gone",          &td5[5], false);
-    cnt += testGet("Test 24g: 2nd 4k key is there",         &td5[6], true);
+    cnt += testGet("Test 24g: 2nd 4k key is gone",          &td5[6], false);
     cnt += testGet("Test 24h: 3rd 4k key is there",         &td5[7], true);
     cnt += testGet("Test 24i: 4th 4k key is there",         &td5[8], true);
     cnt += testGet("Test 24j: 5th 4k key is there",         &td5[9], true);
@@ -608,6 +618,112 @@ int main(int argc, char **argv)
     cnt += testGet("Test 26h: 8th key is there",         &td6[7], true);
     cnt += testGet("Test 26i: 9th key is there",         &td6[8], true);
     cnt += testGet("Test 26j: new key is there",         &td3[0], true);
+
+    /*
+     * Test27 - test LRU ejection in downward order.  With 9 items in the
+     *          buffer of 2, 4 and 8K size.  Deleting an 11K item should 
+     *          result in the oldest 2 8K entries being removed
+     */
+    gtcache_destroy();
+    
+    for(i=0, size=0; i < sizeof(td7)/sizeof(*td7); i++)
+    {
+        size += td7[i].size;
+    }
+    gtcache_init(size, 512, 5);
+
+    for(i=0; i < sizeof(td7)/sizeof(*td7); i++)
+    {
+        TestSet(&td7[i]);
+    }
+
+    td3[0].key = "http://9Kbuffer.com";
+    td3[0].data = largebuf;
+    td3[0].size = 1024*9-2;
+    TestSet(&td3[0]);
+
+    cnt += testGet("Test 27a: 1st key is there",         &td7[0], true);
+    cnt += testGet("Test 27b: 2nd key is there",         &td7[1], true);
+    cnt += testGet("Test 27c: 3rd key is gone",          &td7[2], false);
+    cnt += testGet("Test 27d: 4th key is there",         &td7[3], true);
+    cnt += testGet("Test 27e: 5th key is there",         &td7[4], true);
+    cnt += testGet("Test 27f: 6th key is gone",          &td7[5], false);
+    cnt += testGet("Test 27g: 7th key is there",         &td7[6], true);
+    cnt += testGet("Test 27h: 8th key is there",         &td7[7], true);
+    cnt += testGet("Test 27i: 9th key is there",         &td7[8], true);
+    cnt += testGet("Test 27j: new key is there",         &td3[0], true);
+
+
+    /*
+     * Test28 - verify LRU across upper bounds and boundry of 1024 is in 
+     *          the 2nd band rather than the 1sth band
+     *          Same setup as test 27, but this time we add a 1K object
+     *          which ends up replacing a 2047 byte object.
+     */
+    gtcache_destroy();
+    
+    for(i=0, size=0; i < sizeof(td7)/sizeof(*td7); i++)
+    {
+        size += td7[i].size;
+    }
+    gtcache_init(size, 512, 5);
+
+    for(i=0; i < sizeof(td7)/sizeof(*td7); i++)
+    {
+        TestSet(&td7[i]);
+    }
+
+    td3[0].key = "http://1Kbuffer.com";
+    td3[0].data = largebuf;
+    td3[0].size = 1024;
+    TestSet(&td3[0]);
+
+    cnt += testGet("Test 28a: 1st key is gond",          &td7[0], false);
+    cnt += testGet("Test 28b: 2nd key is there",         &td7[1], true);
+    cnt += testGet("Test 28c: 3rd key is there",         &td7[2], true);
+    cnt += testGet("Test 28d: 4th key is there",         &td7[3], true);
+    cnt += testGet("Test 28e: 5th key is there",         &td7[4], true);
+    cnt += testGet("Test 28f: 6th key is there",         &td7[5], true);
+    cnt += testGet("Test 28g: 7th key is there",         &td7[6], true);
+    cnt += testGet("Test 28h: 8th key is there",         &td7[7], true);
+    cnt += testGet("Test 28i: 9th key is there",         &td7[8], true);
+    cnt += testGet("Test 28j: new key is there",         &td3[0], true);
+
+    /*
+     * Test28 - verify LRU across upper bounds and boundry of 1024 is in 
+     *          the 2nd band rather than the 1sth band
+     *          Same setup as test 27, but this time we add a 1025 byte object
+     *          which ends up replacing a 4095 byte object because when it 
+     *          rounds up it rounds into the next band.
+     */
+    gtcache_destroy();
+    
+    for(i=0, size=0; i < sizeof(td7)/sizeof(*td7); i++)
+    {
+        size += td7[i].size;
+    }
+    gtcache_init(size, 512, 5);
+
+    for(i=0; i < sizeof(td7)/sizeof(*td7); i++)
+    {
+        TestSet(&td7[i]);
+    }
+
+    td3[0].key = "http://1Kbuffer.com";
+    td3[0].data = largebuf;
+    td3[0].size = 1025;
+    TestSet(&td3[0]);
+
+    cnt += testGet("Test 29a: 1st key is there",         &td7[0], true);
+    cnt += testGet("Test 29b: 2nd key is gone",          &td7[1], false);
+    cnt += testGet("Test 29c: 3rd key is there",         &td7[2], true);
+    cnt += testGet("Test 29d: 4th key is there",         &td7[3], true);
+    cnt += testGet("Test 29e: 5th key is there",         &td7[4], true);
+    cnt += testGet("Test 29f: 6th key is there",         &td7[5], true);
+    cnt += testGet("Test 29g: 7th key is there",         &td7[6], true);
+    cnt += testGet("Test 29h: 8th key is there",         &td7[7], true);
+    cnt += testGet("Test 29i: 9th key is there",         &td7[8], true);
+    cnt += testGet("Test 29j: new key is there",         &td3[0], true);
 
 
     if( cnt == 0 )
