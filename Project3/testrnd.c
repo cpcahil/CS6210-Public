@@ -135,9 +135,7 @@ int main(int argc, char **argv)
      */
     gtcache_set(td[3].key, td[3].data, td[3].size);
     cnt += testGet("Test  4a: save/get of another item", &td[3], true);
-    cnt += testGet("Test  4b: 3rd item is no longer in cache", &td[2], false);
-    cnt += testGet("Test  4c: can still get the 2nd item", &td[1], true);
-    cnt += testGet("Test  4d: can still get the 1st item", &td[0], true);
+    cnt += testGetMultiple("Test 4b: 2 of the others are still here", &td[0], 2, 3);
 
     /*
      * cleanup so we can start again
