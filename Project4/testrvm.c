@@ -210,57 +210,21 @@ Test_rvm_init()
      */
     system("rm -rf " TEST_DIR "; touch " TEST_DIR);
     fprintf(stdout, "Test 1c: Initialize dir name that already exists as a file: ");
-    if( (rvm = rvm_init(TEST_DIR)) != NULL )
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
-    else
-    {
-        fputs(passed, stdout);
-    }
+    cnt += TestSuccess( (rvm = rvm_init(TEST_DIR)) == NULL );
 
     /*
      * Test D: try initializing over a directory who's parent doesn't exist
      */
     unlink(TEST_DIR);
     fprintf(stdout, "Test 1d: Missing parent directory fails: ");
-    if( (rvm = rvm_init(TEST_DIR "/dir2")) != NULL )
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
-    else
-    {
-        fputs(passed, stdout);
-    }
+    cnt += TestSuccess( (rvm = rvm_init(TEST_DIR "/dir2")) == NULL );
 
     /*
      * Test E: try initializing over a directory without permissions to create files
      */
     system("rm -rf " TEST_DIR "; mkdir " TEST_DIR "; chmod 444 " TEST_DIR );
     fprintf(stdout, "Test 1e: Existing directory with too little permissions fails: ");
-    if( (rvm = rvm_init(TEST_DIR)) != NULL )
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
-    else
-    {
-        fputs(passed, stdout);
-    }
+    cnt += TestSuccess( (rvm = rvm_init(TEST_DIR)) == NULL );
     system("rm -rf " TEST_DIR );
 
     /*
@@ -302,25 +266,11 @@ static int
 TestGoodInit(int cnt, void ** parms)
 {
     rvm_t         rvm1;
-    int           rtn = 0;
 
     /*
      * this needs to be tested in a child process
      */
-    if( (rvm1 = rvm_init(TEST_DIR)) == NULL )
-    {
-        fprintf( stdout, STR_FAILED "\n");
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        rtn++;
-    }
-    else
-    {
-        fprintf(stdout, STR_PASSED "\n");
-    }
-    return(rtn);
+    return( TestSuccess( (rvm1 = rvm_init(TEST_DIR)) != NULL ) );
 }
 
 static int
@@ -362,8 +312,6 @@ static int
 Test_rvm_map()
 {
     int               cnt = 0;
-    char            * failed = STR_FAILED "\n";
-    char            * passed = STR_PASSED "\n";
     void            * parms[PARMS_TM_SIZE];
     char            * pFile;
     struct stat       statbuf;
@@ -378,38 +326,15 @@ Test_rvm_map()
      */
     system("rm -rf " TEST_DIR " " TEST_DIR "2");
     fprintf(stdout, "Test 2a: call with a NULL rvm fails: ");
-    if( (rvm = rvm_map(NULL, "testseg1", 10)) != NULL )
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
-    else
-    {
-        fputs(passed, stdout);
-    }
+    cnt += TestSuccess( (rvm = rvm_map(NULL, "testseg1", 10)) == NULL );
 
     /*
      * Test B: witn an uninitialized rvm
      */
     memset(&testrvm, '\0', sizeof(testrvm));
     fprintf(stdout, "Test 2b: call with an uninitialized rvm fails: ");
-    if( (rvm = rvm_map(&testrvm, "testseg1", 10)) != NULL )
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
-    else
-    {
-        fputs(passed, stdout);
-    }
+    cnt += TestSuccess( (rvm = rvm_map(&testrvm, "testseg1", 10)) == NULL );
+
     /*
      * Test C: with a NULl segment name fails
      */
@@ -1140,12 +1065,10 @@ TestDestroy( int parmcnt, void **parms )
 {
     int               cnt = 0;
     int               errcnt;
-    char            * failed = STR_FAILED "\n";
     char              filePath[512];
     int               i;
     testseg_t       * maps;
     int               max;
-    char            * passed = STR_PASSED "\n";
     char            * pFileName;
     char            * pMem;
     char            * pMem2;
@@ -1205,19 +1128,7 @@ TestDestroy( int parmcnt, void **parms )
     /*
      * check to make sure the file still exists
      */
-    if( stat(pFileName, &statbuf) == 0 )
-    {
-        fputs(passed, stdout);
-    }
-    else
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
+    cnt += TestSuccess( stat(pFileName, &statbuf) == 0 );
         
     /*
      * Test B: destroying witn an uninitialized rvm
@@ -1229,19 +1140,7 @@ TestDestroy( int parmcnt, void **parms )
     /*
      * check to make sure the file still exists
      */
-    if( stat(pFileName, &statbuf) == 0 )
-    {
-        fputs(passed, stdout);
-    }
-    else
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
+    cnt += TestSuccess( stat(pFileName, &statbuf) == 0 );
 
     /*
      * Test C: with a NULl segment name fails
@@ -1253,19 +1152,7 @@ TestDestroy( int parmcnt, void **parms )
      * this is a lame check... but I had to add something..  the real 
      * test is that we didn't crash above
      */
-    if( stat(pFileName, &statbuf) == 0 )
-    {
-        fputs(passed, stdout);
-    }
-    else
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
+    cnt += TestSuccess( stat(pFileName, &statbuf) == 0 );
 
     /*
      * Test D: destroying a real segment works
@@ -1276,19 +1163,7 @@ TestDestroy( int parmcnt, void **parms )
     /*
      * segment should not be there
      */
-    if( stat(pFileName, &statbuf) == -1 )
-    {
-        fputs(passed, stdout);
-    }
-    else
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
+    cnt += TestSuccess( stat(pFileName, &statbuf) == -1 );
 
     /*
      * Test E: destroying a real segment works
@@ -1297,21 +1172,9 @@ TestDestroy( int parmcnt, void **parms )
     rvm_destroy(rvm1,  TEST_SEG "2");
     
     /*
-     * segment should not be there
+     * segment should still not be there
      */
-    if( stat(pFileName, &statbuf) == -1 )
-    {
-        fputs(passed, stdout);
-    }
-    else
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
+    cnt += TestSuccess( stat(pFileName, &statbuf) == -1 );
 
     /*
      * Test F: destroying an empty string doesn't destroy directory
@@ -1320,21 +1183,9 @@ TestDestroy( int parmcnt, void **parms )
     rvm_destroy(rvm1,  "");
     
     /*
-     * directory should still be here
+     * directory should be still here
      */
-    if( stat(TEST_DIR, &statbuf) != -1 )
-    {
-        fputs(passed, stdout);
-    }
-    else
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
+    cnt += TestSuccess( stat(TEST_DIR, &statbuf) == 0 );
 
     /*
      * Test G: destroying an in-use segment should not work
@@ -1345,19 +1196,7 @@ TestDestroy( int parmcnt, void **parms )
     /*
      * directory should still be here
      */
-    if( stat(TEST_DIR "/" TEST_SEG , &statbuf) != -1 )
-    {
-        fputs(passed, stdout);
-    }
-    else
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
+    cnt += TestSuccess( stat(TEST_DIR "/" TEST_SEG, &statbuf) == 0 );
 
     /*
      * test H: destorying multiple segments works
@@ -1389,19 +1228,7 @@ TestDestroy( int parmcnt, void **parms )
         }
     }
 
-    if( errcnt != 0 )
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
-    else
-    {
-        fputs(passed, stdout);
-    }
+    cnt += TestSuccess( errcnt == 0 );
 
     /*
      * test I: destorying multiple segments works
@@ -1424,19 +1251,7 @@ TestDestroy( int parmcnt, void **parms )
         }
     }
 
-    if( errcnt != 0 )
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
-    else
-    {
-        fputs(passed, stdout);
-    }
+    cnt += TestSuccess( errcnt == 0 );
 
     /*
      * test J: After unmapping them they can be destroyed
@@ -1458,19 +1273,7 @@ TestDestroy( int parmcnt, void **parms )
         }
     }
 
-    if( errcnt != 0 )
-    {
-        fputs(failed,stdout);
-        if( exitOnError )
-        {
-            exit(10);
-        }
-        cnt++;
-    }
-    else
-    {
-        fputs(passed, stdout);
-    }
+    cnt += TestSuccess( errcnt == 0 );
 
     /*
      * clean up after those two tests
@@ -1794,32 +1597,31 @@ TestModify( int parmcnt, void **parms )
     /*
      * Test E: Let's try to to repeat that
      */
-    fprintf(stdout, "Test 6e: repeat uses same mod: ");
+    fprintf(stdout, "Test 6e: repeat just adds another mod: ");
     rvm_about_to_modify(txn,  pSegs[0]->segbase, 10, 10);
-    cnt += TestSuccess( steque_size(&pSegs[0]->mods) == 1 );
+    cnt += TestSuccess( steque_size(&pSegs[0]->mods) == 2 );
 
 
     /*
      * Test F: extending the area is ignored
      */
-    fprintf(stdout, "Test 6f: extending the area is ignored: ");
+    fprintf(stdout, "Test 6f: extending area adds another mod: ");
     rvm_about_to_modify(txn,  pSegs[0]->segbase, 10, 100);
-    pMod = steque_front(&pSegs[0]->mods);
-    cnt += TestSuccess( (pMod->offset == 10) && (pMod->size == 10) );
+    cnt += TestSuccess( steque_size(&pSegs[0]->mods) == 3 );
 
     /*
      * Test G: adding another area works
      */
     fprintf(stdout, "Test 6g: adding another area succeeds: ");
     rvm_about_to_modify(txn,  pSegs[0]->segbase, 1024, 100);
-    cnt += TestSuccess( steque_size(&pSegs[0]->mods) == 2 );
+    cnt += TestSuccess( steque_size(&pSegs[0]->mods) == 4 );
 
     /*
      * Test H: adding an area in the 2nd segment works
      */
     fprintf(stdout, "Test 6h: adding area in 2nd segment succeeds: ");
     rvm_about_to_modify(txn,  pSegs[1]->segbase, 0, 10);
-    cnt += TestSuccess(    (steque_size(&pSegs[0]->mods) == 2)
+    cnt += TestSuccess(    (steque_size(&pSegs[0]->mods) == 4)
                         && (steque_size(&pSegs[1]->mods) == 1) );
 
 
