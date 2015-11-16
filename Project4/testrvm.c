@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <signal.h>
 #include "rvm.h"
 #include "verbosity.h"
 
@@ -64,8 +65,17 @@ static testseg_t testmult_samename[] =
     { TEST_SEG "-samename-1", 4096*2, 0, NULL }
 };
 
+/*
+ * Definitions for load tests
+ */
+#define PARMS_LOAD_SEGS             0
+#define PARMS_LOAD_UPS_PER_TXN      1
+#define PARMS_LOAD_MAX_CNT          2
+#define PARMS_LOAD_SIZE             3
+
 static void FillInData(char * pName, char * pData, size_t cnt);
 static int  RunInChild( int (*func)(int cnt, void **parms), int cnt, void **parms);
+static int  InterruptedRunInChild( int (*func)(), int cnt, void **parms);
 static int  Test_rvm_init();
 static int  Test_rvm_map();
 static int  Test_rvm_unmap();
@@ -75,6 +85,7 @@ static int  Test_rvm_about_to_modify();
 static int  Test_rvm_abort_trans();
 static int  Test_rvm_commit_trans();
 static int  Test_rvm_truncate_log();
+static int  Test_load();
 static int  TestAbort( int parmcnt, void **parms );
 static int  TestCommit( int parmcnt, void **parms );
 static int  TestModify( int parmcnt, void **parms );
@@ -87,6 +98,7 @@ static int  TestMapMultiple(int cnt, void **parms);
 static int  TestUnmap( int cnt, void **parms );
 static int  TestSuccess(bool success );
 static int  TestTruncate( int parmcnt, void **parms );
+static int  TestLoad( int parmcnt, void **parms );
 
 int main(int argc, char **argv)
 {
@@ -165,6 +177,11 @@ int main(int argc, char **argv)
      * Test 9: test rvm_truncate_log()...
      */
     cnt += Test_rvm_truncate_log();
+
+    /*
+     * Test 10: Load test of overall system
+     */
+    cnt += Test_load();
 
     if( cnt == 0 )
     {
@@ -791,7 +808,7 @@ TestUnmap( int parmcnt, void **parms )
 
     /*
      * unlike our other tests, rvm_unmap() doesn't inicate success or failure so we can only
-     * check by attempting to access the data... should prove interesting if things aren't 
+     * check by attempting to access the data... should prove interesting if things aren't
      * working correctly.
      */
 
@@ -821,7 +838,7 @@ TestUnmap( int parmcnt, void **parms )
         return(1);
     }
     testval = pMem[0];
-    
+
     /*
      * Test A:  unmapping with NULL rvm
      */
@@ -844,7 +861,7 @@ TestUnmap( int parmcnt, void **parms )
         }
         cnt++;
     }
-        
+
     /*
      * Test B: unmap witn an uninitialized rvm
      */
@@ -868,13 +885,13 @@ TestUnmap( int parmcnt, void **parms )
         }
         cnt++;
     }
-        
+
     /*
      * Test C: with a NULl segment name fails
      */
     fprintf(stdout, "Test 3c: call with a NULL segment name fails: ");
     rvm_unmap(rvm1,  NULL);
-    
+
     if( pMem[0] == testval )
     {
         fputs(passed, stdout);
@@ -957,7 +974,7 @@ TestUnmap( int parmcnt, void **parms )
     {
         fputs(passed, stdout);
     }
-        
+
     /*
      * test I: trying to remap those same segments again all fail
      */
@@ -968,7 +985,7 @@ TestUnmap( int parmcnt, void **parms )
     for(i=0; i < max; i++)
     {
         /*
-         * change success state to failure for this test -- we don't expect any of 
+         * change success state to failure for this test -- we don't expect any of
          * these segments to be mappable since they are already mapped
          */
         maps[i].success = false;
@@ -1089,7 +1106,7 @@ TestDestroy( int parmcnt, void **parms )
     }
     rvm_unmap(rvm1, pMem2);  // TEST_SEG "2" is now a segment we can destroy
     pFileName = TEST_DIR "/" TEST_SEG "2";
-    
+
 
     /*
      * Test A:  destroying with NULL rvm
@@ -1101,7 +1118,7 @@ TestDestroy( int parmcnt, void **parms )
      * check to make sure the file still exists
      */
     cnt += TestSuccess( stat(pFileName, &statbuf) == 0 );
-        
+
     /*
      * Test B: destroying witn an uninitialized rvm
      */
@@ -1119,9 +1136,9 @@ TestDestroy( int parmcnt, void **parms )
      */
     fprintf(stdout, "Test 4c: call with a NULL segment name fails: ");
     rvm_destroy(rvm1,  NULL);
-    
+
     /*
-     * this is a lame check... but I had to add something..  the real 
+     * this is a lame check... but I had to add something..  the real
      * test is that we didn't crash above
      */
     cnt += TestSuccess( stat(pFileName, &statbuf) == 0 );
@@ -1131,7 +1148,7 @@ TestDestroy( int parmcnt, void **parms )
      */
     fprintf(stdout, "Test 4d: destroying an unused segment succeeds: ");
     rvm_destroy(rvm1,  TEST_SEG "2");
-    
+
     /*
      * segment should not be there
      */
@@ -1142,7 +1159,7 @@ TestDestroy( int parmcnt, void **parms )
      */
     fprintf(stdout, "Test 4e: destroying a destroyed segment doesn't crash the system: ");
     rvm_destroy(rvm1,  TEST_SEG "2");
-    
+
     /*
      * segment should still not be there
      */
@@ -1153,7 +1170,7 @@ TestDestroy( int parmcnt, void **parms )
      */
     fprintf(stdout, "Test 4f: destroying an empty segment name doesn't destroy directory: ");
     rvm_destroy(rvm1,  "");
-    
+
     /*
      * directory should be still here
      */
@@ -1164,7 +1181,7 @@ TestDestroy( int parmcnt, void **parms )
      */
     fprintf(stdout, "Test 4g: destroying a mapped segment should fail: ");
     rvm_destroy(rvm1,  TEST_SEG);
-    
+
     /*
      * directory should still be here
      */
@@ -1327,14 +1344,14 @@ TestBeginTrans( int parmcnt, void **parms )
         }
         return(1);
     }
-    
+
 
     /*
      * Test A:  starting txn with NULL rvm
      */
     fprintf(stdout, "Test 5a: call with a NULL rvm fails: ");
     cnt += TestSuccess( (txn=rvm_begin_trans(NULL,  1, pMems)) == (trans_t) -1);
-        
+
     /*
      * Test B: starting txn witn an uninitialized rvm
      */
@@ -1353,7 +1370,7 @@ TestBeginTrans( int parmcnt, void **parms )
      */
     fprintf(stdout, "Test 5d: with zero segment count fails: ");
     cnt += TestSuccess( (txn=rvm_begin_trans(rvm1,  0, pMems)) == (trans_t) -1);
-    
+
     /*
      * Test E: with a single segment
      */
@@ -1393,8 +1410,8 @@ TestBeginTrans( int parmcnt, void **parms )
         errcnt += TestMapCheckSuccess(pMems1[i], &maps[i], true);
     }
 
-    
-    cnt += TestSuccess(    (errcnt != 0) 
+
+    cnt += TestSuccess(    (errcnt != 0)
                         || ((txn=rvm_begin_trans(rvm1,  max, pMems1)) != (trans_t) -1) );
 
 
@@ -1402,7 +1419,7 @@ TestBeginTrans( int parmcnt, void **parms )
      * test J: creating txn with same multiple again fails
      */
     fprintf(stdout, "Test 5j: txn with same multiple segs fails: ");
-    cnt += TestSuccess(    (errcnt != 0) 
+    cnt += TestSuccess(    (errcnt != 0)
                         || ((txn=rvm_begin_trans(rvm1,  max, pMems1)) == (trans_t) -1) );
 
 
@@ -1410,14 +1427,14 @@ TestBeginTrans( int parmcnt, void **parms )
      * test K: creating txn with one of the multiple again fails
      */
     fprintf(stdout, "Test 5j: txn with one from multiple segs (start) fails: ");
-    cnt += TestSuccess(    (errcnt != 0) 
+    cnt += TestSuccess(    (errcnt != 0)
                         || ((txn=rvm_begin_trans(rvm1,  1, pMems1)) == (trans_t) -1) );
 
     /*
      * test L: creating txn with one of the multiple again fails
      */
     fprintf(stdout, "Test 5l: txn with one from multiple segs (end) fails: ");
-    cnt += TestSuccess(    (errcnt != 0) 
+    cnt += TestSuccess(    (errcnt != 0)
                         || ((txn=rvm_begin_trans(rvm1,  1, &pMems1[max-1])) == (trans_t) -1) );
 
     /*
@@ -1516,7 +1533,7 @@ TestModify( int parmcnt, void **parms )
      * get the segment pointer from the txn (can't do this in real life, but for testing we can
      */
     pSegs = txn->segments;
-    
+
 
     /*
      * Test A: pass in a null for tid fails
@@ -1530,7 +1547,7 @@ TestModify( int parmcnt, void **parms )
      * cause the program to crash
      */
     fputs(passed, stdout);
-        
+
     /*
      * Test B: using uninitialized tid
      */
@@ -1550,14 +1567,14 @@ TestModify( int parmcnt, void **parms )
      */
     fprintf(stdout, "Test 6c: call with a NULL segbase doesn't crash: ");
     rvm_about_to_modify(txn,  NULL, 10, 10);
-    
+
     /*
      * if we get here, we will assume we passed (no way to check without
      * poking into the internals) -- at least we know if we get here we didn't
      * cause the program to crash
      */
     fputs(passed, stdout);
-    
+
 
     /*
      * Test D: Let's try to create one modifyable area in the first segment
@@ -1698,7 +1715,7 @@ TestAbort( int parmcnt, void **parms )
      * cause the program to crash
      */
     fputs(passed, stdout);
-        
+
     /*
      * Test B: using uninitialized tid
      */
@@ -1719,9 +1736,9 @@ TestAbort( int parmcnt, void **parms )
     fprintf(stdout, "Test 7c: abort with no changes succeeds: "); fflush(stdout);
     pSeg = txn->segments[0];                // get this before we abort (it goes away)
     rvm_abort_trans(txn);
-    
+
     cnt += TestSuccess( pSeg->cur_trans == NULL);
-   
+
 
     /*
      * Test D: Can't use transaction again
@@ -1741,7 +1758,7 @@ TestAbort( int parmcnt, void **parms )
     fprintf(stdout, "Test 7e: abort does restore data: ");
     assert( (txn = rvm_begin_trans(rvm1,  2, pMems)) != (trans_t) -1);
     pSeg = txn->segments[0];                  // get this before we abort (it goes away)
-    rvm_about_to_modify(txn,  pSeg->segbase, 10, 10); 
+    rvm_about_to_modify(txn,  pSeg->segbase, 10, 10);
     ((char *) (pSeg->segbase))[10] = 'a';
     rvm_abort_trans(txn);
     cnt += TestSuccess( ((char *) (pSeg->segbase))[10] == '\0');
@@ -1755,7 +1772,7 @@ TestAbort( int parmcnt, void **parms )
     pSeg = txn->segments[0];                  // get this before we abort (it goes away)
     s  = (char *) pSeg->segbase;
     strcpy(s,  "Hello world, Conor is Here");
-    rvm_about_to_modify(txn,  pSeg->segbase, 0, 10);  
+    rvm_about_to_modify(txn,  pSeg->segbase, 0, 10);
     memcpy(s+1, "ELLO", 4);
     rvm_about_to_modify(txn,  pSeg->segbase, 3, 10);
     s[3] = 'K';
@@ -1768,7 +1785,7 @@ TestAbort( int parmcnt, void **parms )
      * make sure our changes took
      */
     assert( strcmp(s, "jeLKO world, No He Isn'tre") == 0 );
-    
+
     rvm_abort_trans(txn);
 
     cnt += TestSuccess( strcmp(s, "Hello world, Conor is Here") == 0 );
@@ -1786,7 +1803,7 @@ TestAbort( int parmcnt, void **parms )
     strcpy(s,  "Hello world, Conor is Here");
     strcpy(s2, "Goodbye World, Conor Left a while ago");
 
-    rvm_about_to_modify(txn,  pSeg->segbase, 0, 20);  
+    rvm_about_to_modify(txn,  pSeg->segbase, 0, 20);
     memcpy(s, "12345678901234567890",20);
     rvm_about_to_modify(txn,  pSeg2->segbase, 0, 20);
     memcpy(s2, "12345678901234567890",20);
@@ -1796,7 +1813,7 @@ TestAbort( int parmcnt, void **parms )
      */
     assert( strcmp(s, "12345678901234567890s Here") == 0 );
     assert( strcmp(s2, "12345678901234567890 Left a while ago") == 0);
-    
+
     rvm_abort_trans(txn);
 
     cnt += TestSuccess( (strcmp(s,  "Hello world, Conor is Here") == 0)
@@ -1903,7 +1920,7 @@ TestCommit( int parmcnt, void **parms )
      * cause the program to crash
      */
     fputs(passed, stdout);
-        
+
     /*
      * Test B: using uninitialized tid
      */
@@ -1924,9 +1941,9 @@ TestCommit( int parmcnt, void **parms )
     fprintf(stdout, "Test 8c: commit with no changes succeeds: "); fflush(stdout);
     pSeg = txn->segments[0];                // get this before we abort (it goes away)
     rvm_commit_trans(txn);
-    
+
     cnt += TestSuccess( pSeg->cur_trans == NULL);
-   
+
 
     /*
      * Test D: Can't commit an aborted tranaction
@@ -1954,7 +1971,7 @@ TestCommit( int parmcnt, void **parms )
 
 
     /*
-     * Test F: committing multiple overlapping regions works (as far as we can tell -- 
+     * Test F: committing multiple overlapping regions works (as far as we can tell --
      *         need full integ tests to know for sure)
      */
     fprintf(stdout, "Test 8f: commit multiple overlapping regions works: ");
@@ -1962,7 +1979,7 @@ TestCommit( int parmcnt, void **parms )
     pSeg = txn->segments[0];                  // get this before we abort (it goes away)
     s  = (char *) pSeg->segbase;
     strcpy(s,  "Hello world, Conor is Here");
-    rvm_about_to_modify(txn,  pSeg->segbase, 0, 10);  
+    rvm_about_to_modify(txn,  pSeg->segbase, 0, 10);
     memcpy(s+1, "ELLO", 4);
     rvm_about_to_modify(txn,  pSeg->segbase, 3, 10);
     s[3] = 'K';
@@ -1975,7 +1992,7 @@ TestCommit( int parmcnt, void **parms )
      * make sure our changes took
      */
     assert( strcmp(s, "jeLKO world, No He Isn'tre") == 0 );
-    
+
     rvm_commit_trans(txn);
 
     cnt += TestSuccess(    (strcmp(s, "jeLKO world, No He Isn'tre") == 0)
@@ -1994,7 +2011,7 @@ TestCommit( int parmcnt, void **parms )
     strcpy(s,  "Hello world, Conor is Here");
     strcpy(s2, "Goodbye World, Conor Left a while ago");
 
-    rvm_about_to_modify(txn,  pSeg->segbase, 0, 40);  
+    rvm_about_to_modify(txn,  pSeg->segbase, 0, 40);
     memcpy(s, "12345678901234567890",20);
     rvm_about_to_modify(txn,  pSeg2->segbase, 0, 40);
     memcpy(s2, "12345678901234567890",20);
@@ -2004,7 +2021,7 @@ TestCommit( int parmcnt, void **parms )
      */
     assert( strcmp(s, "12345678901234567890s Here") == 0 );
     assert( strcmp(s2, "12345678901234567890 Left a while ago") == 0);
-    
+
     rvm_commit_trans(txn);
 
     cnt += TestSuccess(    (strcmp(s,"12345678901234567890s Here") == 0)
@@ -2118,7 +2135,7 @@ TestTruncate( int parmcnt, void **parms )
      * cause the program to crash
      */
     fputs(passed, stdout);
-        
+
     /*
      * Test B: using uninitialized tid
      */
@@ -2140,9 +2157,9 @@ TestTruncate( int parmcnt, void **parms )
     pSeg = txn->segments[0];                  // get this before we abort (it goes away)
     rvm_commit_trans(txn);
     rvm_truncate_log(rvm1);
-    
+
     cnt += TestSuccess( pSeg->cur_trans == NULL);
-   
+
 
     /*
      * Test D: committed change without trucate does not show up
@@ -2167,13 +2184,13 @@ TestTruncate( int parmcnt, void **parms )
 
 
     /*
-     * Test F: committing multiple overlapping regions works (as far as we can tell -- 
+     * Test F: committing multiple overlapping regions works (as far as we can tell --
      *         need full integ tests to know for sure)
      */
     fprintf(stdout, "Test 9f: commit multiple overlapping regions works: ");
     assert( (txn = rvm_begin_trans(rvm1,  2, pMems)) != (trans_t) -1);
     s  = (char *) pMems[0];
-    rvm_about_to_modify(txn,  pMems[0], 0, 10);  
+    rvm_about_to_modify(txn,  pMems[0], 0, 10);
     memcpy(s+1, "ELLO", 4);
     rvm_about_to_modify(txn,  pMems[0], 3, 10);
     s[3] = 'K';
@@ -2186,7 +2203,7 @@ TestTruncate( int parmcnt, void **parms )
      * make sure our changes took
      */
     assert( strcmp(s, "jeLKO world, No He Isn'tre\n") == 0 );
-    
+
     rvm_commit_trans(txn);
     rvm_truncate_log(rvm1);
     assert(lseek(fd1,0L,SEEK_SET) == 0 );
@@ -2240,7 +2257,7 @@ TestTruncate( int parmcnt, void **parms )
      */
     assert( strcmp(s, "12345678901234567890as Here") == 0 );
     assert( strcmp(s2, "12345678901234567890 Left a while ago") == 0);
-    
+
     rvm_truncate_log(rvm1);
 
     assert(lseek(fd1,0L,SEEK_SET) == 0 );
@@ -2258,6 +2275,312 @@ TestTruncate( int parmcnt, void **parms )
     return(cnt);
 
 } /* TestTruncate(... */
+
+typedef struct LoadDef
+{
+    int           segSize;              // the size of the segments to create
+    int           numCountIncs;;        // number of counter increments per segment
+    int           numSegs;              // number of segments to create and use
+    int           numOpsPerTxn;         // number of counter updates per each transaction
+    int           numTxnsPerTrunc;      // number of transactions between truncations
+    int           intOffset;            // how far in the segment to put the ints
+} LoadDef_t;
+
+static int
+Test_load()
+{
+    int               cnt = 0;
+    LoadDef_t         loadParms;
+    void            * parms[2];
+//  char            * failed = STR_FAILED "\n";
+//  char            * passed = STR_PASSED "\n";
+
+    fprintf(stdout, "------------ Test 10: load test ------------\n");
+
+    /*
+     * Test A: simple count to 1000 in a single segment
+     */
+    fprintf(stdout, "Test 10a: 1 seg, 4k size, 0k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
+    fflush(stdout);
+    system("rm -rf " TEST_DIR);
+    loadParms.segSize = 4096;
+    loadParms.numCountIncs=1000;
+    loadParms.numSegs=1;
+    loadParms.numOpsPerTxn = 1;
+    loadParms.numTxnsPerTrunc = 1;
+    loadParms.intOffset = 0;
+    parms[0] = (void *) &loadParms;
+    cnt += RunInChild(TestLoad, 1, parms);
+
+    /*
+     * Test B:
+     */
+    fprintf(stdout, "Test 10b: 1 seg, 4k size, 1k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
+    fflush(stdout);
+    system("rm -rf " TEST_DIR);
+    loadParms.segSize = 4096;
+    loadParms.numCountIncs=1000;
+    loadParms.numSegs=1;
+    loadParms.numOpsPerTxn = 1;
+    loadParms.numTxnsPerTrunc = 1;
+    loadParms.intOffset = 1024;
+    parms[0] = (void *) &loadParms;
+    cnt += RunInChild(TestLoad, 1, parms);
+
+    /*
+     * Test C:
+     */
+    fprintf(stdout, "Test 10c: 1 seg, 40k size, 1k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
+    fflush(stdout);
+    system("rm -rf " TEST_DIR);
+    loadParms.segSize = 40*1024;
+    loadParms.numCountIncs=1000;
+    loadParms.numSegs=1;
+    loadParms.numOpsPerTxn = 1;
+    loadParms.numTxnsPerTrunc = 1;
+    loadParms.intOffset = 10*1024;
+    parms[0] = (void *) &loadParms;
+    cnt += RunInChild(TestLoad, 1, parms);
+
+    /*
+     * Test D:
+     */
+    fprintf(stdout, "Test 10d: 6 segs, 4k size, 2k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
+    fflush(stdout);
+    system("rm -rf " TEST_DIR);
+    loadParms.segSize = 4096;
+    loadParms.numCountIncs=1000;
+    loadParms.numSegs=6;
+    loadParms.numOpsPerTxn = 1;
+    loadParms.numTxnsPerTrunc = 1;
+    loadParms.intOffset = 2*1024;
+    parms[0] = (void *) &loadParms;
+    cnt += RunInChild(TestLoad, 1, parms);
+
+    /*
+     * Test E:
+     */
+    fprintf(stdout, "Test 10e: 6 segs, 100k size, 2k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
+    fflush(stdout);
+    system("rm -rf " TEST_DIR);
+    loadParms.segSize = 100*1024;
+    loadParms.numCountIncs=1000;
+    loadParms.numSegs=6;
+    loadParms.numOpsPerTxn = 1;
+    loadParms.numTxnsPerTrunc = 1;
+    loadParms.intOffset = 2*1024;
+    parms[0] = (void *) &loadParms;
+    cnt += RunInChild(TestLoad, 1, parms);
+
+    /*
+     * Test F:
+     */
+    fprintf(stdout, "Test 10f: 10 segs, 10k size, 8k offt,  10000 cnt, 1/10/5 trunc/txn/op: ");
+    fflush(stdout);
+    system("rm -rf " TEST_DIR);
+    loadParms.segSize = 10*1024;
+    loadParms.numCountIncs=10000;
+    loadParms.numSegs=10;
+    loadParms.numOpsPerTxn = 5;
+    loadParms.numTxnsPerTrunc = 10;
+    loadParms.intOffset = 8*1024;
+    parms[0] = (void *) &loadParms;
+    cnt += RunInChild(TestLoad, 1, parms);
+
+    /*
+     * Test G:
+     */
+    fprintf(stdout, "Test 10g: 100 segs, 2k size, 1k offt,  10000 cnt, 1/10/10 trunc/txn/op: ");
+    fflush(stdout);
+    system("rm -rf " TEST_DIR);
+    loadParms.segSize = 2*1024;
+    loadParms.numCountIncs=10000;
+    loadParms.numSegs=100;
+    loadParms.numOpsPerTxn = 10;
+    loadParms.numTxnsPerTrunc = 10;
+    loadParms.intOffset = 1*1024;
+    parms[0] = (void *) &loadParms;
+    cnt += RunInChild(TestLoad, 1, parms);
+
+    /*
+     * Test H:
+     */
+    fprintf(stdout, "Test 10h: same test as 10g, but interrupted & restarted repeatedly: ");
+    fflush(stdout);
+    system("rm -rf " TEST_DIR);
+    loadParms.segSize = 2*1024;
+    loadParms.numCountIncs=10000;
+    loadParms.numSegs=100;
+    loadParms.numOpsPerTxn = 10;
+    loadParms.numTxnsPerTrunc = 10;
+    loadParms.intOffset = 1*1024;
+    parms[0] = (void *) &loadParms;
+    cnt += InterruptedRunInChild(TestLoad, 1, parms);
+
+    return(cnt);
+}
+
+static int
+TestLoad( int parmcnt, void **parms )
+{
+    char              buf[512];
+    int               cnt;
+    int             **counters;
+    int               intOffset;
+    LoadDef_t       * l;
+    int               op;
+    int               maxCnt;
+    int               maxOps;
+    int               maxSegs;
+    int               maxTxns;
+    void            **pMems;
+    int               rtn;
+    rvm_t             rvm1;
+    int               seg;
+    int               segSize;
+    trans_t           tid;
+    int               txn;
+
+    assert(parmcnt == 1);
+
+    l = (LoadDef_t *) parms[0];
+
+    maxCnt = l->numCountIncs * l->numSegs;
+    maxSegs = l->numSegs;
+    maxOps  = l->numOpsPerTxn;
+    maxTxns = l->numTxnsPerTrunc;
+    intOffset = l->intOffset;
+    segSize = l->segSize;
+
+    assert( intOffset < (segSize-sizeof(int)));
+
+
+    /*
+     * get our handle, if we can't, no tests can be run...
+     */
+    assert((rvm1 = rvm_init(TEST_DIR)) != NULL );
+
+    /*
+     * map the test segments
+     */
+    assert( (pMems = malloc(maxSegs * sizeof(*pMems))) != NULL);
+    for(seg=0; seg < maxSegs; seg++)
+    {
+        snprintf(buf, sizeof(buf), TEST_SEG "_%d", seg);
+
+        assert( (pMems[seg] = rvm_map(rvm1, buf, segSize)) != NULL );
+    }
+
+    /*
+     * map our integer counters
+     */
+    assert( (counters = malloc(maxSegs * sizeof(*pMems))) != NULL);
+    for(seg=0; seg < maxSegs; seg++)
+    {
+        counters[seg] = (int *) ( ((char *)pMems[seg])+intOffset);
+    }
+
+    /*
+     * if we're picking up old data, make sure the data is valid
+     */
+    if( *counters[0] != 0 )
+    {
+        for(seg=0; seg < (maxSegs-1); seg++)
+        {
+            if( *counters[seg+1] != (*counters[seg]+1) )
+            {
+                fprintf(stdout,"ERROR: counters out of sync position %d, dumping counters:\n", seg);
+                for(seg=0; seg < maxSegs; seg++)
+                {
+                    fprintf(stdout, "   seg[%d] counter = %d\n", seg, *counters[seg]);
+                }
+                exit(10);
+            }
+        }
+        cnt = *counters[maxSegs-1]+1;
+    }
+    else
+    {
+        cnt = 0;
+    }
+
+    /*
+     * start the transaction and setup modification areas
+     */
+    assert( (tid = rvm_begin_trans(rvm1,  maxSegs, pMems)) != (trans_t) -1);
+    for(seg=0; seg < maxSegs; seg++)
+    {
+        rvm_about_to_modify(tid,  pMems[seg], intOffset, sizeof(int));
+    }
+
+    seg = txn = op = 0;
+    while( cnt < maxCnt )
+    {
+        *counters[seg] = cnt++;
+
+        if( ++seg >= maxSegs )
+        {
+            if( ++op >= maxOps )
+            {
+                rvm_commit_trans(tid);
+
+                if( ++txn >= maxTxns )
+                {
+                    rvm_truncate_log(rvm1);
+
+                    txn = 0;
+                }
+
+                assert( (tid = rvm_begin_trans(rvm1,  maxSegs, pMems)) != (trans_t) -1);
+                for(seg=0; seg < maxSegs; seg++)
+                {
+                    rvm_about_to_modify(tid,  pMems[seg], intOffset, sizeof(int));
+                }
+
+                op = 0;
+            }
+
+            seg = 0;
+        }
+    }
+
+    signal(SIGINT, SIG_IGN);    // turn off SIGNINT at this point
+
+    rvm_commit_trans(tid);
+    rvm_truncate_log(rvm1);
+
+    /*
+     * unmap and remap the test segments
+     */
+    for(seg=0; seg < maxSegs; seg++)
+    {
+        rvm_unmap(rvm1, pMems[seg]);
+
+        snprintf(buf, sizeof(buf), TEST_SEG "_%d", seg);
+
+        /*
+         * map a simple segment  (again for testing);
+         */
+        assert( (pMems[seg] = rvm_map(rvm1, buf, segSize)) != NULL );
+    }
+
+    /*
+     * map our integer counters
+     */
+    for(seg=0; seg < maxSegs; seg++)
+    {
+        counters[seg] = (int *) ( ((char *)pMems[seg])+intOffset);
+    }
+
+    /*
+     * verify the last counter
+     */
+    rtn = TestSuccess( *counters[maxSegs-1] == (cnt-1));
+
+    return(rtn);
+
+} /* TestLoad(... */
+
 
 static int
 RunInChild( int (*func)(), int cnt, void **parms)
@@ -2302,9 +2625,9 @@ RunInChild( int (*func)(), int cnt, void **parms)
         }
         else if( WIFSIGNALED(exitstatus) )
         {
-            if( WTERMSIG(exitstatus) != SIGKILL )
+            if( WTERMSIG(exitstatus) != SIGINT )
             {
-                fprintf(stderr, "Child caught signal %d\n", WTERMSIG(exitstatus)); 
+                fprintf(stderr, "Child caught signal %d\n", WTERMSIG(exitstatus));
                 if( exitOnError )
                 {
                     exit(10);
@@ -2327,6 +2650,86 @@ RunInChild( int (*func)(), int cnt, void **parms)
 
 } /* RunInChild(... */
 
+static int
+InterruptedRunInChild( int (*func)(), int cnt, void **parms)
+{
+    extern int        errno;
+    int               exitstatus;
+    pid_t             pid;
+    int               rtn = 0;
+
+    for(;;)
+    {
+        /*
+         * in the child, run the function...
+         */
+        if( (pid=fork()) == 0 )
+        {
+            exit(func(cnt, parms) );
+        }
+        /*
+         * if the fork failed
+         */
+        else if( pid == -1 )
+        {
+            fprintf(stderr,"Internal error:  Fork Failed, errno=%d\n", errno);
+            exit(20);
+        }
+        else
+        {
+            /*
+             * waite 1/10 sec then kill child
+             */
+            usleep(10000);
+            kill(pid, SIGINT);
+
+            if( waitpid(pid, &exitstatus,0) == -1 )
+            {
+                fprintf(stderr,"Internal error: Faild to wait on child process, errno=%d\n", errno);
+                exit(20);
+            }
+            if( WIFEXITED(exitstatus) )
+            {
+                if((WEXITSTATUS(exitstatus) != 0) )
+                {
+                    if( exitOnError )
+                    {
+                        exit(10);
+                    }
+                    rtn++;
+                }
+                break;
+            }
+            else if( WIFSIGNALED(exitstatus) )
+            {
+                if( WTERMSIG(exitstatus) != SIGINT )
+                {
+                    fprintf(stderr, "Child caught signal %d\n", WTERMSIG(exitstatus));
+                    if( exitOnError )
+                    {
+                        exit(10);
+                    }
+                    rtn++;
+                    break;
+                }
+            }
+            else
+            {
+                fprintf(stderr,"Child did not exit cleanly:  Exit status: %d\n", exitstatus);
+                if( exitOnError )
+                {
+                    exit(10);
+                }
+                rtn++;
+                break;
+            }
+        }
+    }
+
+    return(rtn);
+
+} /* InterruptedRunInChild(... */
+
 static void
 FillInData(char * pName, char * pData, size_t cnt)
 {
@@ -2339,7 +2742,7 @@ FillInData(char * pName, char * pData, size_t cnt)
     assert( close(fd) != -1 );
 }
 
-static int 
+static int
 TestSuccess(bool success )
 {
     int               cnt = 0;
