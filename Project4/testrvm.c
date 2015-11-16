@@ -74,6 +74,7 @@ static int  Test_rvm_begin_trans();
 static int  Test_rvm_about_to_modify();
 static int  Test_rvm_abort_trans();
 static int  Test_rvm_commit_trans();
+static int  Test_rvm_truncate_log();
 static int  TestAbort( int parmcnt, void **parms );
 static int  TestCommit( int parmcnt, void **parms );
 static int  TestModify( int parmcnt, void **parms );
@@ -85,6 +86,7 @@ static int  TestMapCheckSuccess(void * pMem, testseg_t * pTest, bool silent);
 static int  TestMapMultiple(int cnt, void **parms);
 static int  TestUnmap( int cnt, void **parms );
 static int  TestSuccess(bool success );
+static int  TestTruncate( int parmcnt, void **parms );
 
 int main(int argc, char **argv)
 {
@@ -158,6 +160,11 @@ int main(int argc, char **argv)
      * Test 8: test rvm_commit_trans()...
      */
     cnt += Test_rvm_commit_trans();
+
+    /*
+     * Test 9: test rvm_truncate_log()...
+     */
+    cnt += Test_rvm_truncate_log();
 
     if( cnt == 0 )
     {
@@ -1987,9 +1994,9 @@ TestCommit( int parmcnt, void **parms )
     strcpy(s,  "Hello world, Conor is Here");
     strcpy(s2, "Goodbye World, Conor Left a while ago");
 
-    rvm_about_to_modify(txn,  pSeg->segbase, 0, 20);  
+    rvm_about_to_modify(txn,  pSeg->segbase, 0, 40);  
     memcpy(s, "12345678901234567890",20);
-    rvm_about_to_modify(txn,  pSeg2->segbase, 0, 20);
+    rvm_about_to_modify(txn,  pSeg2->segbase, 0, 40);
     memcpy(s2, "12345678901234567890",20);
 
     /*
@@ -2010,6 +2017,247 @@ TestCommit( int parmcnt, void **parms )
     return(cnt);
 
 } /* TestCommit(... */
+
+static int
+Test_rvm_truncate_log()
+{
+    int               cnt = 0;
+
+    fprintf(stdout, "------------ Test 9: unit tests for rvm_truncate_log() ------------\n");
+
+    /*
+     * just run all of these tests in a single child
+     */
+    system("rm -rf " TEST_DIR);
+    cnt += RunInChild(TestTruncate, 0, NULL);
+
+    return(cnt);
+}
+
+static int
+TestTruncate( int parmcnt, void **parms )
+{
+    char              buf1[512];
+    char              buf2[512];
+    int               cnt = 0;
+    int               fd1;
+    int               fd2;
+    char            * passed = STR_PASSED "\n";
+    void            * pMems[2];
+    segment_t         pSeg;
+    rvm_t             rvm1;
+    char            * s;
+    char            * s2;
+    struct _rvm_t     testrvm;
+    trans_t           txn;
+
+    /*
+     * get our handle, if we can't, no tests can be run...
+     */
+    system("rm -rf " TEST_DIR );
+    if( (rvm1 = rvm_init(TEST_DIR)) == NULL )
+    {
+        fprintf( stdout, "Test 9 initialization - " STR_FAILED " - can't create RVM\n");
+        if( exitOnError )
+        {
+            exit(10);
+        }
+        return(1);
+    }
+
+    /*
+     * map a simple segment  (again for testing);
+     */
+    if( (pMems[0] = rvm_map(rvm1, TEST_SEG, 4096)) == NULL )
+    {
+        fprintf( stdout, "Test 9 initialization - " STR_FAILED " - can't map 1st seg\n");
+        if( exitOnError )
+        {
+            exit(10);
+        }
+        return(1);
+    }
+    assert( (fd1 = open( TEST_DIR "/" TEST_SEG, O_RDWR )) != -1);
+
+    /*
+     * map a 2nd simple segment  (again for testing);
+     */
+    if( (pMems[1] = rvm_map(rvm1, TEST_SEG "2", 4096)) == NULL )
+    {
+        fprintf( stdout, "Test 9 initialization - " STR_FAILED " - can't map 2nd seg\n");
+        if( exitOnError )
+        {
+            exit(10);
+        }
+        return(1);
+    }
+    assert( (fd2 = open( TEST_DIR "/" TEST_SEG "2", O_RDWR )) != -1);
+
+    /*
+     * create a transaction with these two segments
+     */
+    if( (txn=rvm_begin_trans(rvm1,  2, pMems)) == (trans_t) -1)
+    {
+        fprintf( stdout, "Test 9 initialization - " STR_FAILED " - can't create txn\n");
+        if( exitOnError )
+        {
+            exit(10);
+        }
+        return(1);
+    }
+
+    /*
+     * Test A: pass in a null for tid fails
+     */
+    fprintf(stdout, "Test 9a: call with a NULL rvm doesn't crash: ");
+    rvm_truncate_log(NULL);
+
+    /*
+     * if we get here, we will assume we passed (no way to check without
+     * poking into the internals) -- at least we know if we get here we didn't
+     * cause the program to crash
+     */
+    fputs(passed, stdout);
+        
+    /*
+     * Test B: using uninitialized tid
+     */
+    memset(&testrvm, '\0', sizeof(testrvm));
+    fprintf(stdout, "Test 9b: call with an uninitialized rvm doesn't crash: ");
+    rvm_truncate_log(&testrvm);
+
+    /*
+     * if we get here, we will assume we passed (no way to check without
+     * poking into the internals) -- at least we know if we get here we didn't
+     * cause the program to crash
+     */
+    fputs(passed, stdout);
+
+    /*
+     * Test C: commit txn with no changes is OK
+     */
+    fprintf(stdout, "Test 9c: truncate with no changes works: "); fflush(stdout);
+    pSeg = txn->segments[0];                  // get this before we abort (it goes away)
+    rvm_commit_trans(txn);
+    rvm_truncate_log(rvm1);
+    
+    cnt += TestSuccess( pSeg->cur_trans == NULL);
+   
+
+    /*
+     * Test D: committed change without trucate does not show up
+     */
+    fprintf(stdout, "Test 9d: no visible change without truncate: ");
+    assert( (txn = rvm_begin_trans(rvm1,  2, pMems)) != (trans_t) -1);
+    rvm_about_to_modify(txn,  pMems[0], 0, 28);   // should not work, txn was aborted
+    memcpy(pMems[0], "Hello world, Conor is Here\n", 28);
+    rvm_commit_trans(txn);
+    assert(lseek(fd1,0L,SEEK_SET) == 0 );
+    assert(read(fd1, buf1, 28) == 28 );
+    cnt += TestSuccess( strcmp(buf1, "Hello world, Conor is Here\n") != 0 );
+
+    /*
+     * Test E: data is visible after truncation
+     */
+    fprintf(stdout, "Test 9e: but it is visible after truncation: ");
+    rvm_truncate_log(rvm1);
+    assert(lseek(fd1,0L,SEEK_SET) == 0 );
+    assert(read(fd1, buf1, 28) == 28 );
+    cnt += TestSuccess( strcmp(buf1, "Hello world, Conor is Here\n") == 0 );
+
+
+    /*
+     * Test F: committing multiple overlapping regions works (as far as we can tell -- 
+     *         need full integ tests to know for sure)
+     */
+    fprintf(stdout, "Test 9f: commit multiple overlapping regions works: ");
+    assert( (txn = rvm_begin_trans(rvm1,  2, pMems)) != (trans_t) -1);
+    s  = (char *) pMems[0];
+    rvm_about_to_modify(txn,  pMems[0], 0, 10);  
+    memcpy(s+1, "ELLO", 4);
+    rvm_about_to_modify(txn,  pMems[0], 3, 10);
+    s[3] = 'K';
+    rvm_about_to_modify(txn,  pMems[0], 10, 17);
+    memcpy(s+13, "No He Isn't", 11);
+    rvm_about_to_modify(txn,  pMems[0], 0, 10);
+    memcpy(s, "je", 2);
+
+    /*
+     * make sure our changes took
+     */
+    assert( strcmp(s, "jeLKO world, No He Isn'tre\n") == 0 );
+    
+    rvm_commit_trans(txn);
+    rvm_truncate_log(rvm1);
+    assert(lseek(fd1,0L,SEEK_SET) == 0 );
+    assert(read(fd1, buf1, 28) == 28 );
+
+    cnt += TestSuccess(  strcmp(buf1, "jeLKO world, No He Isn'tre\n") == 0);
+
+    /*
+     * Test G: committing changes in multiple segments works
+     */
+    fprintf(stdout, "Test 9g: changes in multiple segments works: ");
+    assert( (txn = rvm_begin_trans(rvm1,  2, pMems)) != (trans_t) -1);
+    s  = (char *) pMems[0];
+    s2 = (char *) pMems[1];
+    rvm_about_to_modify(txn,  pMems[0], 0, 40);
+    strcpy(s,  "Hello World  Conor was Here");
+    rvm_about_to_modify(txn,  pMems[1], 0, 40);
+    strcpy(s2, "Goodbye World, Conor Left a while ago");
+    rvm_commit_trans(txn);
+    rvm_truncate_log(rvm1);
+
+    assert(lseek(fd1,0L,SEEK_SET) == 0 );
+    assert(read(fd1, buf1, 40) == 40 );
+    assert(lseek(fd2,0L,SEEK_SET) == 0 );
+    assert(read(fd2, buf2, 40) == 40 );
+
+    cnt += TestSuccess(    (strcmp(buf1, "Hello World  Conor was Here") == 0 )
+                        && (strcmp(buf2, "Goodbye World, Conor Left a while ago") == 0) );
+
+
+    /*
+     * Test H: multiple commited transactons in multiple segments works
+     */
+    fprintf(stdout, "Test 9h: multiple changes in multiple segments works: ");
+    assert( (txn = rvm_begin_trans(rvm1,  2, pMems)) != (trans_t) -1);
+    rvm_about_to_modify(txn,  pMems[0], 0, 10);
+    memcpy(s, "1234567890",10);
+    rvm_about_to_modify(txn,  pMems[1], 0, 10);
+    memcpy(s2, "1234567890",10);
+    rvm_commit_trans(txn);
+
+    assert( (txn = rvm_begin_trans(rvm1,  2, pMems)) != (trans_t) -1);
+    rvm_about_to_modify(txn,  pMems[0], 10, 10);
+    memcpy(s+10,  "1234567890",10);
+    rvm_about_to_modify(txn,  pMems[1], 10, 10);
+    memcpy(s2+10, "1234567890",10);
+    rvm_commit_trans(txn);
+
+    /*
+     * make sure our changes took
+     */
+    assert( strcmp(s, "12345678901234567890as Here") == 0 );
+    assert( strcmp(s2, "12345678901234567890 Left a while ago") == 0);
+    
+    rvm_truncate_log(rvm1);
+
+    assert(lseek(fd1,0L,SEEK_SET) == 0 );
+    assert(read(fd1, buf1, 28) == 28 );
+
+    assert(lseek(fd1,0L,SEEK_SET) == 0 );
+    assert(read(fd1, buf1, 40) == 40 );
+    assert(lseek(fd2,0L,SEEK_SET) == 0 );
+    assert(read(fd2, buf2, 40) == 40 );
+    cnt += TestSuccess(    (strcmp(buf1,"12345678901234567890as Here") == 0)
+                        && (strcmp(buf2,"12345678901234567890 Left a while ago") == 0) );
+
+
+
+    return(cnt);
+
+} /* TestTruncate(... */
 
 static int
 RunInChild( int (*func)(), int cnt, void **parms)
