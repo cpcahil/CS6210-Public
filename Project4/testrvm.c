@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -75,7 +76,7 @@ static testseg_t testmult_samename[] =
 
 static void FillInData(char * pName, char * pData, size_t cnt);
 static int  RunInChild( int (*func)(int cnt, void **parms), int cnt, void **parms);
-static int  InterruptedRunInChild( int (*func)(), int cnt, void **parms);
+static int  InterruptedRunInChild( int (*func)(), long sleepTime, int cnt, void **parms);
 static int  Test_rvm_init();
 static int  Test_rvm_map();
 static int  Test_rvm_unmap();
@@ -2300,6 +2301,9 @@ Test_load()
     void            * parms[2];
 //  char            * failed = STR_FAILED "\n";
 //  char            * passed = STR_PASSED "\n";
+    long              sleepTime;
+    struct timeval    tend;
+    struct timeval    tstart;
 
     fprintf(stdout, "------------ Test 10: load test ------------\n");
 
@@ -2398,6 +2402,7 @@ Test_load()
      */
     fprintf(stdout, "Test 10g: 100 segs, 2k size, 1k offt,  10000 cnt, 1/10/10 trunc/txn/op: ");
     fflush(stdout);
+    gettimeofday(&tstart, NULL);
     system("rm -rf " TEST_DIR);
     loadParms.segSize = 2*1024;
     loadParms.numCountIncs=10000;
@@ -2406,7 +2411,22 @@ Test_load()
     loadParms.numTxnsPerTrunc = 10;
     loadParms.intOffset = 1*1024;
     parms[0] = (void *) &loadParms;
+
+    gettimeofday(&tstart, NULL);
     cnt += RunInChild(TestLoad, 1, parms);
+    gettimeofday(&tend, NULL);
+
+    /*
+     * calculate elapsed time
+     */
+    if( tend.tv_usec < tstart.tv_usec )
+    {
+        tend.tv_usec += 1000000;
+        tend.tv_sec--;
+    }
+
+    tend.tv_sec = tend.tv_sec - tstart.tv_sec;
+    tend.tv_usec = tend.tv_usec - tstart.tv_usec;
 
     /*
      * Test H:
@@ -2420,8 +2440,9 @@ Test_load()
     loadParms.numOpsPerTxn = 10;
     loadParms.numTxnsPerTrunc = 10;
     loadParms.intOffset = 1*1024;
+    sleepTime = (tend.tv_sec * 1000000 + tend.tv_usec) / 99;  // allow for 99 interrupts
     parms[0] = (void *) &loadParms;
-    cnt += InterruptedRunInChild(TestLoad, 1, parms);
+    cnt += InterruptedRunInChild(TestLoad, sleepTime, 1, parms);
 
     return(cnt);
 }
@@ -2657,7 +2678,7 @@ RunInChild( int (*func)(), int cnt, void **parms)
 } /* RunInChild(... */
 
 static int
-InterruptedRunInChild( int (*func)(), int cnt, void **parms)
+InterruptedRunInChild( int (*func)(), long sleepTime, int cnt, void **parms)
 {
     extern int        errno;
     int               exitstatus;
@@ -2686,7 +2707,14 @@ InterruptedRunInChild( int (*func)(), int cnt, void **parms)
             /*
              * waite 1/10 sec then kill child
              */
-            usleep(10000);
+            if( sleepTime > 1000000 )
+            {
+                sleep(sleepTime/1000000);
+            }
+            else
+            {
+                usleep(sleepTime);
+            }
             kill(pid, SIGINT);
 
             if( waitpid(pid, &exitstatus,0) == -1 )
