@@ -1735,9 +1735,10 @@ TestAbort( int parmcnt, void **parms )
      */
     fprintf(stdout, "Test 7c: abort with no changes succeeds: "); fflush(stdout);
     pSeg = txn->segments[0];                // get this before we abort (it goes away)
+    pSeg2 = txn->segments[1];
     rvm_abort_trans(txn);
 
-    cnt += TestSuccess( pSeg->cur_trans == NULL);
+    cnt += TestSuccess( (pSeg->cur_trans == NULL) && (pSeg2->cur_trans == NULL) );
 
 
     /*
@@ -1940,9 +1941,10 @@ TestCommit( int parmcnt, void **parms )
      */
     fprintf(stdout, "Test 8c: commit with no changes succeeds: "); fflush(stdout);
     pSeg = txn->segments[0];                // get this before we abort (it goes away)
+    pSeg2 = txn->segments[1];
     rvm_commit_trans(txn);
 
-    cnt += TestSuccess( pSeg->cur_trans == NULL);
+    cnt += TestSuccess( (pSeg->cur_trans == NULL) && (pSeg2->cur_trans == NULL) );
 
 
     /*
@@ -1977,6 +1979,7 @@ TestCommit( int parmcnt, void **parms )
     fprintf(stdout, "Test 8f: commit multiple overlapping regions works: ");
     assert( (txn = rvm_begin_trans(rvm1,  2, pMems)) != (trans_t) -1);
     pSeg = txn->segments[0];                  // get this before we abort (it goes away)
+    pSeg2 = txn->segments[1];
     s  = (char *) pSeg->segbase;
     strcpy(s,  "Hello world, Conor is Here");
     rvm_about_to_modify(txn,  pSeg->segbase, 0, 10);
@@ -1996,7 +1999,8 @@ TestCommit( int parmcnt, void **parms )
     rvm_commit_trans(txn);
 
     cnt += TestSuccess(    (strcmp(s, "jeLKO world, No He Isn'tre") == 0)
-                        && (pSeg->cur_trans == NULL) );
+                        && (pSeg->cur_trans == NULL)
+                        && (pSeg2->cur_trans == NULL) );
 
     /*
      * Test G: committing changes in multiple segments works
@@ -2062,6 +2066,7 @@ TestTruncate( int parmcnt, void **parms )
     char            * passed = STR_PASSED "\n";
     void            * pMems[2];
     segment_t         pSeg;
+    segment_t         pSeg2;
     rvm_t             rvm1;
     char            * s;
     char            * s2;
@@ -2155,10 +2160,11 @@ TestTruncate( int parmcnt, void **parms )
      */
     fprintf(stdout, "Test 9c: truncate with no changes works: "); fflush(stdout);
     pSeg = txn->segments[0];                  // get this before we abort (it goes away)
+    pSeg2 = txn->segments[1];
     rvm_commit_trans(txn);
     rvm_truncate_log(rvm1);
 
-    cnt += TestSuccess( pSeg->cur_trans == NULL);
+    cnt += TestSuccess( (pSeg->cur_trans == NULL) && (pSeg2->cur_trans == NULL) );
 
 
     /*
