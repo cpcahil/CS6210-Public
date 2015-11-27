@@ -653,7 +653,7 @@ TestMapMultiple(int cnt, void **parms)
         {
             if(pMem[i] != NULL)
             {
-                rvm_unmap(rvm1, pMem);
+                rvm_unmap(rvm1, pMem[i]);
                 pMem[i] = NULL;
             }
         }
