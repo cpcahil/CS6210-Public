@@ -86,6 +86,7 @@ static int  Test_rvm_about_to_modify();
 static int  Test_rvm_abort_trans();
 static int  Test_rvm_commit_trans();
 static int  Test_rvm_truncate_log();
+static int  Test_integ();
 static int  Test_load();
 static int  TestAbort( int parmcnt, void **parms );
 static int  TestCommit( int parmcnt, void **parms );
@@ -99,7 +100,10 @@ static int  TestMapMultiple(int cnt, void **parms);
 static int  TestUnmap( int cnt, void **parms );
 static int  TestSuccess(bool success );
 static int  TestTruncate( int parmcnt, void **parms );
+static int  TestInteg( int parmcnt, void **parms );
+static int  TestAbortPartialChange( int parmcnt, void **parms );
 static int  TestLoad( int parmcnt, void **parms );
+
 
 int main(int argc, char **argv)
 {
@@ -180,7 +184,12 @@ int main(int argc, char **argv)
     cnt += Test_rvm_truncate_log();
 
     /*
-     * Test 10: Load test of overall system
+     * Test 10: integration tests()...
+     */
+    cnt += Test_integ();
+
+    /*
+     * Test 11: Load test of overall system
      */
     cnt += Test_load();
 
@@ -2283,6 +2292,203 @@ TestTruncate( int parmcnt, void **parms )
 
 } /* TestTruncate(... */
 
+static int
+Test_integ()
+{
+    int               cnt = 0;
+
+    fprintf(stdout, "------------ Test 10: integratin tests ------------\n");
+
+    /*
+     * just run all of these tests in a single child
+     */
+    system("rm -rf " TEST_DIR);
+    cnt += RunInChild(TestInteg, 0, NULL);
+
+    return(cnt);
+}
+
+static int
+TestInteg( int parmcnt, void **parms )
+{
+    int               cnt = 0;
+    int               i;
+    void            * params[4];
+    char            * pMems[2];
+    rvm_t             rvm1;
+    trans_t           txn;
+
+    /*
+     * get our handle, if we can't, no tests can be run...
+     */
+    system("rm -rf " TEST_DIR );
+    if( (rvm1 = rvm_init(TEST_DIR)) == NULL )
+    {
+        fprintf( stdout, "Test 9 initialization - " STR_FAILED " - can't create RVM\n");
+        if( exitOnError )
+        {
+            exit(10);
+        }
+        return(1);
+    }
+
+    /*
+     * Test A: Segments are initialized to all NULL bytes
+     */
+    fprintf(stdout, "Test 10a: Segment initialized as all nulls: ");
+    assert((pMems[0] = rvm_map(rvm1, TEST_SEG, 4096)) != NULL );
+
+    for(i=0; i < 4096; i++)
+    {
+        if( pMems[0][i] != '\0' )
+        {
+            break;
+        }
+    }
+    cnt += TestSuccess( i == 4096 );
+
+    /*
+     * Test B: unmap and remap of same segment still full of nulls
+     */
+    fprintf(stdout, "Test 10b: Segment still nulls after unmap and remap: ");
+
+    rvm_unmap(rvm1, pMems[0]);
+    assert((pMems[0] = rvm_map(rvm1, TEST_SEG, 4096)) != NULL );
+    for(i=0; i < 4096; i++)
+    {
+        if( pMems[0][i] != '\0' )
+        {
+            break;
+        }
+    }
+    cnt += TestSuccess( i == 4096 );
+
+    /*
+     * Test C: change data with no rvm_about_to_modify, unmap and remap of same segment still full of nulls
+     */
+    fprintf(stdout, "Test 10c: Changed data without rvm_about_to_modify is lost on remap: ");
+
+    strcpy(pMems[0], "Hello World!\n");
+
+    rvm_unmap(rvm1, pMems[0]);
+    assert((pMems[0] = rvm_map(rvm1, TEST_SEG, 4096)) != NULL );
+    for(i=0; i < 4096; i++)
+    {
+        if( pMems[0][i] != '\0' )
+        {
+            break;
+        }
+    }
+    cnt += TestSuccess( i == 4096 );
+
+
+    /*
+     * Test D: change data rvm_about_to_modify but no commit, unmap and remap of same segment still full of nulls
+     */
+    fprintf(stdout, "Test 10d: Changed data without commit is lost on remap: ");
+    fflush(stdout);
+
+    params[0] = (void *) rvm1;
+    params[1] = (void *) pMems;
+
+    RunInChild( TestAbortPartialChange, 2, (void **)params);
+
+    rvm_unmap(rvm1, pMems[0]);
+    rvm_truncate_log(rvm1);
+    assert((pMems[0] = rvm_map(rvm1, TEST_SEG, 4096)) != NULL );
+    for(i=0; i < 4096; i++)
+    {
+        if( pMems[0][i] != '\0' )
+        {
+            break;
+        }
+    }
+    cnt += TestSuccess( i == 4096 );
+
+    /*
+     * Test E: changed data, aborted txn, unmap and remap of same segment still full of nulls
+     */
+    fprintf(stdout, "Test 10e: Changed data with abort is lost on remap: ");
+    fflush(stdout);
+
+    assert( (txn = rvm_begin_trans(rvm1,  1, (void**)pMems)) != (trans_t) -1);
+    rvm_about_to_modify(txn,  pMems[0], 0, 32);
+    strcpy(pMems[0], "Hello World!\n");
+    rvm_abort_trans(txn);
+
+    rvm_unmap(rvm1, pMems[0]);
+    rvm_truncate_log(rvm1);
+    assert((pMems[0] = rvm_map(rvm1, TEST_SEG, 4096)) != NULL );
+    for(i=0; i < 4096; i++)
+    {
+        if( pMems[0][i] != '\0' )
+        {
+            break;
+        }
+    }
+    cnt += TestSuccess( i == 4096 );
+
+    /*
+     * Test F: committed data is present after remap
+     */
+    fprintf(stdout, "Test 10f: committed data is present after remap: ");
+    fflush(stdout);
+
+    assert( (txn = rvm_begin_trans(rvm1,  1, (void**)pMems)) != (trans_t) -1);
+    rvm_about_to_modify(txn,  pMems[0], 0, 32);
+    strcpy(pMems[0], "Hello World!\n");
+    rvm_commit_trans(txn);
+
+    rvm_unmap(rvm1, pMems[0]);
+
+    assert((pMems[0] = rvm_map(rvm1, TEST_SEG, 4096)) != NULL );
+    for(i=strlen("Hello world!\n"); i < 4096; i++)
+    {
+        if( pMems[0][i] != '\0' )
+        {
+            break;
+        }
+    }
+    cnt += TestSuccess( (strcmp(pMems[0], "Hello World!\n") == 0) && (i == 4096) );
+
+    /*
+     * Test G: Extended data is also filled with nulls and the data that was
+     *         in the segment is still there
+     */
+    fprintf(stdout, "Test 10g: Extended data is filled with nulls and no lost data: ");
+    fflush(stdout);
+
+    rvm_unmap(rvm1, pMems[0]);
+    rvm_truncate_log(rvm1);
+    assert((pMems[0] = rvm_map(rvm1, TEST_SEG, 4096*2)) != NULL );
+    for(i=strlen("Hello world!\n"); i < 4096*2; i++)
+    {
+        if( pMems[0][i] != '\0' )
+        {
+            break;
+        }
+    }
+    cnt += TestSuccess( (strcmp(pMems[0], "Hello World!\n") == 0) && (i == 4096*2) );
+
+
+    return(cnt);
+
+} /* TestInteg(... */
+
+static int
+TestAbortPartialChange( int parmcnt, void **params )
+{
+    trans_t           txn;
+    void            **pMems = (void **) params[1];
+
+    assert( (txn = rvm_begin_trans(params[0],  1, (void**)pMems)) != (trans_t) -1);
+    rvm_about_to_modify(txn,  pMems[0], 0, 32);
+    strcpy(pMems[0], "Hello World!\n");
+
+    exit(0);
+
+} /* TestAbortPartialChange(... */
+
 typedef struct LoadDef
 {
     int           segSize;              // the size of the segments to create
@@ -2305,12 +2511,12 @@ Test_load()
     struct timeval    tend;
     struct timeval    tstart;
 
-    fprintf(stdout, "------------ Test 10: load test ------------\n");
+    fprintf(stdout, "------------ Test 11: load tests ------------\n");
 
     /*
      * Test A: simple count to 1000 in a single segment
      */
-    fprintf(stdout, "Test 10a: 1 seg, 4k size, 0k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
+    fprintf(stdout, "Test 11a: 1 seg, 4k size, 0k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
     fflush(stdout);
     system("rm -rf " TEST_DIR);
     loadParms.segSize = 4096;
@@ -2325,7 +2531,7 @@ Test_load()
     /*
      * Test B:
      */
-    fprintf(stdout, "Test 10b: 1 seg, 4k size, 1k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
+    fprintf(stdout, "Test 11b: 1 seg, 4k size, 1k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
     fflush(stdout);
     system("rm -rf " TEST_DIR);
     loadParms.segSize = 4096;
@@ -2340,7 +2546,7 @@ Test_load()
     /*
      * Test C:
      */
-    fprintf(stdout, "Test 10c: 1 seg, 40k size, 1k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
+    fprintf(stdout, "Test 11c: 1 seg, 40k size, 1k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
     fflush(stdout);
     system("rm -rf " TEST_DIR);
     loadParms.segSize = 40*1024;
@@ -2355,7 +2561,7 @@ Test_load()
     /*
      * Test D:
      */
-    fprintf(stdout, "Test 10d: 6 segs, 4k size, 2k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
+    fprintf(stdout, "Test 11d: 6 segs, 4k size, 2k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
     fflush(stdout);
     system("rm -rf " TEST_DIR);
     loadParms.segSize = 4096;
@@ -2370,7 +2576,7 @@ Test_load()
     /*
      * Test E:
      */
-    fprintf(stdout, "Test 10e: 6 segs, 100k size, 2k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
+    fprintf(stdout, "Test 11e: 6 segs, 100k size, 2k offt,  1000 cnt, 1/1/1 trunc/txn/op: ");
     fflush(stdout);
     system("rm -rf " TEST_DIR);
     loadParms.segSize = 100*1024;
@@ -2385,7 +2591,7 @@ Test_load()
     /*
      * Test F:
      */
-    fprintf(stdout, "Test 10f: 10 segs, 10k size, 8k offt,  10000 cnt, 1/10/5 trunc/txn/op: ");
+    fprintf(stdout, "Test 11f: 10 segs, 10k size, 8k offt,  10000 cnt, 1/10/5 trunc/txn/op: ");
     fflush(stdout);
     system("rm -rf " TEST_DIR);
     loadParms.segSize = 10*1024;
@@ -2400,7 +2606,7 @@ Test_load()
     /*
      * Test G:
      */
-    fprintf(stdout, "Test 10g: 100 segs, 2k size, 1k offt,  10000 cnt, 1/10/10 trunc/txn/op: ");
+    fprintf(stdout, "Test 11g: 100 segs, 2k size, 1k offt,  10000 cnt, 1/10/10 trunc/txn/op: ");
     fflush(stdout);
     gettimeofday(&tstart, NULL);
     system("rm -rf " TEST_DIR);
@@ -2431,7 +2637,7 @@ Test_load()
     /*
      * Test H:
      */
-    fprintf(stdout, "Test 10h: same test as 10g, but interrupted & restarted repeatedly: ");
+    fprintf(stdout, "Test 11h: same test as 11g, but interrupted & restarted repeatedly: ");
     fflush(stdout);
     system("rm -rf " TEST_DIR);
     loadParms.segSize = 2*1024;
